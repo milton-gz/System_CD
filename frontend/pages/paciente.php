@@ -1,4 +1,52 @@
 <?php
+session_start();
+require_once "../config/conexion.php";
+
+// =========================
+// 1. VALIDAR SESIÓN
+// =========================
+if (!isset($_SESSION['id'])) {
+    header("Location: ../../login.php");
+    exit();
+}
+
+// =========================
+// 2. VALIDAR ROL (SOLO PACIENTE)
+// =========================
+if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'paciente') {
+
+    switch ($_SESSION['rol']) {
+
+        case "admin":
+            header("Location: admin.php");
+            break;
+
+        case "doctor":
+            header("Location: doctor.php");
+            break;
+
+        case "recepcion":
+            header("Location: recepcion.php");
+            break;
+
+        default:
+            session_destroy();
+            header("Location: ../../login.php");
+            break;
+    }
+
+    exit();
+}
+
+// =========================
+// 3. SEGURIDAD EXTRA
+// =========================
+if (!isset($_SESSION['nombre'])) {
+    session_destroy();
+    header("Location: ../../login.php");
+    exit();
+}
+
 $nombre = "María López";
 ?>
 <!DOCTYPE html>

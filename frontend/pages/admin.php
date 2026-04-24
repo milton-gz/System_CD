@@ -1,5 +1,129 @@
 <?php
-$admin = "Administrador General";
+if (!isset($_SESSION)) session_start();
+require_once "../config/conexion.php";
+
+
+// =========================
+// 1. VALIDAR SESIÓN
+// =========================
+if (!isset($_SESSION['id'])) {
+    header("Location: ../../login.php");
+    exit();
+}
+
+// =========================
+// 2. VALIDAR ROL (SOLO ADMIN)
+// =========================
+if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'admin') {
+
+    // 🔥 Redirigir según rol
+    switch ($_SESSION['rol']) {
+
+        case "doctor":
+            header("Location: doctor.php");
+            break;
+
+        case "paciente":
+            header("Location: paciente.php");
+            break;
+
+        case "recepcion":
+            header("Location: recepcion.php");
+            break;
+
+        default:
+            // Si no tiene rol válido → fuera
+            session_destroy();
+            header("Location: ../../login.php");
+            break;
+    }
+
+    exit();
+}
+
+// =========================
+// 3. SEGURIDAD EXTRA (opcional)
+// =========================
+if (!isset($_SESSION['nombre'])) {
+    session_destroy();
+    header("Location: ../../login.php");
+    exit();
+}
+
+
+// Usuarios
+$totalUsuarios = $conn->query("SELECT COUNT(*) as total FROM USUARIO")->fetch_assoc()['total'];
+
+// Citas hoy
+$totalCitasHoy = $conn->query("
+SELECT COUNT(*) as total 
+FROM CITA 
+WHERE fecha = CURDATE()
+")->fetch_assoc()['total'];
+
+// Productos críticos (bajo o agotado)
+$totalProductosCriticos = $conn->query("
+SELECT COUNT(*) as total 
+FROM PRODUCTO 
+WHERE estado IN ('bajo','agotado')
+")->fetch_assoc()['total'];
+// =========================
+// OBTENER USUARIOS
+// =========================
+$usuarios = [];
+
+$sql = "SELECT U.nombre, U.correo, R.nombre AS rol, U.estado, U.ultimo_acceso
+        FROM USUARIO U
+        JOIN ROL R ON U.ROL_id_rol = R.id_rol";
+
+$result = $conn->query($sql);
+
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $usuarios[] = $row;
+    }
+}
+
+// =========================
+// OBTENER CITAS
+// =========================
+$citas = [];
+
+$usuarios = $conn->query("
+SELECT 
+    U.id_usuario,
+    U.nombre,
+    U.correo,
+    R.nombre AS rol,
+    U.estado,
+    U.ultimo_acceso
+FROM USUARIO U
+JOIN ROL R ON U.ROL_id_rol = R.id_rol
+");
+
+$result = $conn->query($sql);
+
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $citas[] = $row;
+    }
+}
+
+// =========================
+// INVENTARIO
+// =========================
+$inventario = [];
+
+$sql = "SELECT nombre, categoria, stock, fecha_reposicion FROM PRODUCTO";
+
+$result = $conn->query($sql);
+
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $inventario[] = $row;
+    }
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -109,34 +233,44 @@ transform:translateX(-50%) translateY(0);
 <!-- HEADER -->
 <header class="header-ui px-6 py-3 flex justify-between items-center">
 <img src="../assets/logo.png" class="w-28 rounded-lg">
-<div class="text-sm font-semibold text-white"><?php echo $admin; ?></div>
+<div class="text-sm font-semibold text-white"><?php echo $_SESSION['nombre']; ?></div>
 </header>
 
 <!-- MAIN -->
 <main class="flex-1 max-w-7xl mx-auto w-full p-4">
 
 <h2 class="text-2xl font-bold mb-4">Panel Administrativo</h2>
-
+<a href="../config/cerrar_sesion.php" class="btn-logout">Cerrar sesión</a>
 <!-- KPIs REALES -->
 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
 
 <div class="card p-4">
 <p class="text-xs text-gray-500">Usuarios registrados</p>
-<h3 class="text-xl font-bold">124</h3>
+<h3 class="text-xl font-bold"><?= $totalUsuarios ?></h3>
 </div>
 
 <div class="card p-4">
 <p class="text-xs text-gray-500">Citas hoy</p>
-<h3 class="text-xl font-bold">18</h3>
+<h3 class="text-xl font-bold"><?= $totalCitasHoy ?></h3>
 </div>
 
 <div class="card p-4">
 <p class="text-xs text-gray-500">Productos críticos</p>
-<h3 class="text-xl font-bold text-red-600">4</h3>
+<h3 class="text-xl font-bold text-red-600"><?= $totalProductosCriticos ?></h3>
 </div>
 
-</div>
+<div class="card p-4">
+<p class="text-xs text-gray-500">⚙️ Panel Ejecutivo CRUD</h3>
 
+<p class="text-sm text-gray-600 mb-3">
+Acceso rápido a gestión del sistema (usuarios, citas e inventario)
+</p>
+<a href="crud_admin.php"
+class="bg-[#6FAE84] text-white px-4 py-2 rounded-lg text-sm inline-block">
+Acceder al CRUD
+</a>
+</div>
+</div>
 <!-- TABS -->
 <div class="flex gap-2 mb-4">
 <button class="tab active" data-tab="usuarios">Usuarios</button>
@@ -164,159 +298,32 @@ class="w-full md:w-80 px-3 py-2 text-sm rounded-xl border mb-4">
 </thead>
 
 <tbody>
-
+<?php foreach ($usuarios as $u): ?>
 <tr>
-<td>Juan Pérez</td>
-<td>juan@gmail.com</td>
-<td>Paciente</td>
-<td><span class="badge bg-green-100 text-green-700">Activo</span></td>
-<td>Hoy 08:20 AM</td>
-<td><button class="text-blue-500 text-xs">Editar</button><button class="text-red-500 text-xs ml-2">Eliminar</button></td>
-</tr>
+<td><?= htmlspecialchars($u["nombre"]) ?></td>
+<td><?= htmlspecialchars($u["correo"]) ?></td>
+<td><?= htmlspecialchars($u["rol"]) ?></td>
 
-<tr>
-<td>Ana Martínez</td>
-<td>ana@gmail.com</td>
-<td>Doctor</td>
-<td><span class="badge bg-green-100 text-green-700">Activo</span></td>
-<td>Ayer</td>
-<td><button class="text-blue-500 text-xs">Editar</button><button class="text-red-500 text-xs ml-2">Eliminar</button></td>
-</tr>
+<td>
+<span class="badge 
+<?= $u["estado"] == "activo" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-700" ?>">
+<?= $u["estado"] ?>
+</span>
+</td>
 
-<tr>
-<td>Carlos López</td>
-<td>carlos@gmail.com</td>
-<td>Recepción</td>
-<td><span class="badge bg-gray-200 text-gray-700">Inactivo</span></td>
-<td>Hace 3 días</td>
-<td><button class="text-blue-500 text-xs">Editar</button><button class="text-red-500 text-xs ml-2">Eliminar</button></td>
-</tr>
+<td><?= $u["ultimo_acceso"] ?? "—" ?></td>
 
-<tr>
-<td>María Gómez</td>
-<td>maria@gmail.com</td>
-<td>Paciente</td>
-<td><span class="badge bg-green-100 text-green-700">Activo</span></td>
-<td>Hoy 10:10 AM</td>
-<td><button class="text-blue-500 text-xs">Editar</button><button class="text-red-500 text-xs ml-2">Eliminar</button></td>
+<td>
+<button class="text-blue-500 text-xs">Editar</button>
+<button class="text-red-500 text-xs ml-2">Eliminar</button>
+</td>
 </tr>
-
-<tr>
-<td>Pedro Sánchez</td>
-<td>pedro@gmail.com</td>
-<td>Paciente</td>
-<td><span class="badge bg-yellow-100 text-yellow-700">Pendiente</span></td>
-<td>Hace 1 día</td>
-<td><button class="text-blue-500 text-xs">Editar</button><button class="text-red-500 text-xs ml-2">Eliminar</button></td>
-</tr>
-
-<tr>
-<td>Laura Hernández</td>
-<td>laura@gmail.com</td>
-<td>Doctor</td>
-<td><span class="badge bg-green-100 text-green-700">Activo</span></td>
-<td>Hoy 07:45 AM</td>
-<td><button class="text-blue-500 text-xs">Editar</button><button class="text-red-500 text-xs ml-2">Eliminar</button></td>
-</tr>
-
-<tr>
-<td>José Castillo</td>
-<td>jose@gmail.com</td>
-<td>Recepción</td>
-<td><span class="badge bg-green-100 text-green-700">Activo</span></td>
-<td>Hoy</td>
-<td><button class="text-blue-500 text-xs">Editar</button><button class="text-red-500 text-xs ml-2">Eliminar</button></td>
-</tr>
-
+<?php endforeach; ?>
 </tbody>
 </table>
 
 </section>
 
-<!-- ================= CITAS ================= -->
-<section id="citas" class="card p-4 tab-content hidden">
-
-<table class="table">
-<thead>
-<tr>
-<th>Paciente</th>
-<th>Doctor</th>
-<th>Fecha</th>
-<th>Hora</th>
-<th>Estado</th>
-<th>Acciones</th>
-</tr>
-</thead>
-
-<tbody>
-
-<tr>
-<td>Juan Pérez</td>
-<td>Dr. Ramírez</td>
-<td>22/04/2026</td>
-<td>08:00 AM</td>
-<td><span class="badge bg-yellow-100 text-yellow-700">Pendiente</span></td>
-<td><button class="text-blue-500 text-xs">Reprogramar</button></td>
-</tr>
-
-<tr>
-<td>Ana Martínez</td>
-<td>Dr. Ramírez</td>
-<td>22/04/2026</td>
-<td>09:30 AM</td>
-<td><span class="badge bg-green-100 text-green-700">Confirmada</span></td>
-<td><button class="text-red-500 text-xs">Cancelar</button></td>
-</tr>
-
-<tr>
-<td>Luis Gómez</td>
-<td>Dr. Pérez</td>
-<td>22/04/2026</td>
-<td>11:00 AM</td>
-<td><span class="badge bg-red-100 text-red-700">Urgente</span></td>
-<td><button class="text-red-600 text-xs">Atender</button></td>
-</tr>
-
-<tr>
-<td>María Gómez</td>
-<td>Dr. Hernández</td>
-<td>22/04/2026</td>
-<td>01:00 PM</td>
-<td><span class="badge bg-green-100 text-green-700">Confirmada</span></td>
-<td><button class="text-red-500 text-xs">Cancelar</button></td>
-</tr>
-
-<tr>
-<td>Pedro Sánchez</td>
-<td>Dr. Ramírez</td>
-<td>22/04/2026</td>
-<td>02:30 PM</td>
-<td><span class="badge bg-yellow-100 text-yellow-700">Pendiente</span></td>
-<td><button class="text-blue-500 text-xs">Reprogramar</button></td>
-</tr>
-
-<tr>
-<td>Laura Hernández</td>
-<td>Dr. López</td>
-<td>22/04/2026</td>
-<td>03:00 PM</td>
-<td><span class="badge bg-green-100 text-green-700">Confirmada</span></td>
-<td><button class="text-red-500 text-xs">Cancelar</button></td>
-</tr>
-
-<tr>
-<td>José Castillo</td>
-<td>Dr. Pérez</td>
-<td>22/04/2026</td>
-<td>04:00 PM</td>
-<td><span class="badge bg-red-100 text-red-700">Urgente</span></td>
-<td><button class="text-red-600 text-xs">Atender</button></td>
-</tr>
-
-</tbody>
-</table>
-
-</section>
 
 <!-- ================= INVENTARIO ================= -->
 <section id="inventario" class="card p-4 tab-content hidden">
@@ -333,69 +340,64 @@ class="w-full md:w-80 px-3 py-2 text-sm rounded-xl border mb-4">
 </thead>
 
 <tbody>
-
+<?php foreach ($inventario as $p): ?>
 <tr>
-<td>Anestesia</td>
-<td>Medicamentos</td>
-<td>25</td>
-<td>20/04/2026</td>
-<td><span class="badge bg-green-100 text-green-700">Disponible</span></td>
-</tr>
+    <td><?= htmlspecialchars($p["nombre"]) ?></td>
+    <td><?= htmlspecialchars($p["categoria"]) ?></td>
+    <td><?= $p["stock"] ?></td>
+    <td><?= $p["fecha_reposicion"] ?></td>
 
-<tr>
-<td>Guantes</td>
-<td>Insumos</td>
-<td>5</td>
-<td>18/04/2026</td>
-<td><span class="badge bg-yellow-100 text-yellow-700">Bajo</span></td>
+    <td>
+        <span class="badge
+        <?=
+            $p["estado"] == "disponible" ? "bg-green-100 text-green-700" :
+            ($p["estado"] == "bajo" ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700")
+        ?>">
+            <?= $p["estado"] ?>
+        </span>
+    </td>
 </tr>
-
-<tr>
-<td>Mascarillas</td>
-<td>Insumos</td>
-<td>0</td>
-<td>15/04/2026</td>
-<td><span class="badge bg-red-100 text-red-700">Agotado</span></td>
-</tr>
-
-<tr>
-<td>Jeringas</td>
-<td>Insumos</td>
-<td>40</td>
-<td>21/04/2026</td>
-<td><span class="badge bg-green-100 text-green-700">Disponible</span></td>
-</tr>
-
-<tr>
-<td>Alcohol</td>
-<td>Desinfección</td>
-<td>12</td>
-<td>19/04/2026</td>
-<td><span class="badge bg-green-100 text-green-700">Disponible</span></td>
-</tr>
-
-<tr>
-<td>Algodón</td>
-<td>Insumos</td>
-<td>3</td>
-<td>17/04/2026</td>
-<td><span class="badge bg-yellow-100 text-yellow-700">Bajo</span></td>
-</tr>
-
-<tr>
-<td>Enjuague bucal</td>
-<td>Productos</td>
-<td>0</td>
-<td>10/04/2026</td>
-<td><span class="badge bg-red-100 text-red-700">Agotado</span></td>
-</tr>
-
+<?php endforeach; ?>
 </tbody>
 </table>
 
 </section>
 
 </main>
+
+
+<div id="authBox" class="hidden mt-4">
+
+<?php if(isset($error_crud)): ?>
+<p class="text-red-500 text-sm mb-2"><?= $error_crud ?></p>
+<?php endif; ?>
+
+<form method="POST" class="space-y-2">
+
+<input type="hidden" name="auth_admin" value="1">
+
+<input 
+type="email" 
+name="correo" 
+placeholder="Correo admin"
+class=" "
+required
+>
+
+<input 
+type="password" 
+name="clave" 
+placeholder="Contraseña"
+class=""
+required
+>
+
+<button class="">
+Validar acceso
+</button>
+
+</form>
+</div>
 
 <!-- FOOTER -->
 <footer class="footer-ui p-5 text-center text-sm text-white">
