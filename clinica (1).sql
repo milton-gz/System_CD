@@ -185,6 +185,7 @@ INSERT INTO `rol` (`id_rol`, `nombre`) VALUES
 -- Estructura de tabla para la tabla `usuario`
 --
 
+
 CREATE TABLE `usuario` (
   `id_usuario` int(11) NOT NULL,
   `ROL_id_rol` int(11) NOT NULL,
