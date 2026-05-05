@@ -95,34 +95,96 @@ $idPaciente = (int) $paciente['id_paciente'];
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $accion = $_POST["accion"] ?? "";
 
-    if ($accion === "agendar") {
-        $fecha = trim($_POST["fecha"] ?? "");
-        $hora = trim($_POST["hora"] ?? "");
-        $tipo = trim($_POST["tipo"] ?? "");
-        $doctorId = trim($_POST["doctor"] ?? "");
-        $observaciones = trim($_POST["observaciones"] ?? "");
-        $tiposValidos = ["limpieza", "revision", "emergencia", "otros"];
+   if ($accion === "agendar") {
 
-        if ($fecha === "" || $hora === "" || !in_array($tipo, $tiposValidos, true)) {
-            $error = "Completa fecha, hora y tipo de cita.";
-        } elseif ($fecha < date("Y-m-d")) {
-            $error = "La fecha de la cita no puede ser anterior a hoy.";
+    date_default_timezone_set('America/El_Salvador');
+
+    $fecha = trim($_POST["fecha"] ?? "");
+    $hora = trim($_POST["hora"] ?? "");
+    $tipo = trim($_POST["tipo"] ?? "");
+    $doctorId = trim($_POST["doctor"] ?? "");
+    $observaciones = trim($_POST["observaciones"] ?? "");
+
+    $tiposValidos = ["limpieza", "revision", "emergencia", "otros"];
+
+    if ($fecha === "" || $hora === "" || !in_array($tipo, $tiposValidos, true)) {
+        $error = "Completa fecha, hora y tipo de cita.";
+    } else {
+
+        //  Validar fecha no pasada
+        if ($fecha < date("Y-m-d")) {
+            $error = "La fecha no puede ser anterior a hoy.";
         } else {
-            $doctorParam = $doctorId !== "" ? (int) $doctorId : null;
-            $stmt = $conn->prepare("
-                INSERT INTO CITA (PACIENTE_id_paciente, DOCTOR_id_doctor, fecha, hora, tipo, estado, observaciones)
-                VALUES (?, ?, ?, ?, ?, 'pendiente', ?)
-            ");
-            $stmt->bind_param("iissss", $idPaciente, $doctorParam, $fecha, $hora, $tipo, $observaciones);
 
-            if ($stmt->execute()) {
-                $mensaje = "Cita solicitada correctamente. Queda pendiente de confirmacion.";
+            //  Validar hora no pasada si es hoy
+            $fechaHoraSeleccionada = strtotime("$fecha $hora");
+            $fechaHoraActual = time();
+
+            if ($fechaHoraSeleccionada <= $fechaHoraActual) {
+                $error = "No puedes agendar en una hora pasada.";
             } else {
-                $error = "No se pudo solicitar la cita.";
+
+                //  Validar que el horario no esté ocupado
+                if ($doctorId !== "") {
+                    // Validar por doctor específico
+                    $stmtCheck = $conn->prepare("
+                        SELECT COUNT(*) as total 
+                        FROM CITA 
+                        WHERE fecha = ? 
+                        AND hora = ? 
+                        AND DOCTOR_id_doctor = ?
+                        AND estado IN ('pendiente','confirmada')
+                    ");
+                    $doctorParam = (int) $doctorId;
+                    $stmtCheck->bind_param("ssi", $fecha, $hora, $doctorParam);
+                } else {
+                    // Validar sin importar doctor
+                    $stmtCheck = $conn->prepare("
+                        SELECT COUNT(*) as total 
+                        FROM CITA 
+                        WHERE fecha = ? 
+                        AND hora = ? 
+                        AND estado IN ('pendiente','confirmada')
+                    ");
+                    $stmtCheck->bind_param("ss", $fecha, $hora);
+                }
+
+                $stmtCheck->execute();
+                $resCheck = $stmtCheck->get_result()->fetch_assoc();
+
+                if ($resCheck['total'] > 0) {
+                    $error = "Ese horario ya no está disponible.";
+                } else {
+
+                    //  Insertar cita segura
+                    $doctorParam = $doctorId !== "" ? (int) $doctorId : null;
+
+                    $stmt = $conn->prepare("
+                        INSERT INTO CITA 
+                        (PACIENTE_id_paciente, DOCTOR_id_doctor, fecha, hora, tipo, estado, observaciones)
+                        VALUES (?, ?, ?, ?, ?, 'pendiente', ?)
+                    ");
+
+                    $stmt->bind_param(
+                        "iissss",
+                        $idPaciente,
+                        $doctorParam,
+                        $fecha,
+                        $hora,
+                        $tipo,
+                        $observaciones
+                    );
+
+                    if ($stmt->execute()) {
+                        $mensaje = "Cita solicitada correctamente. Queda pendiente de confirmacion.";
+                    } else {
+                        $error = "No se pudo solicitar la cita.";
+                    }
+                }
             }
         }
     }
-
+}
     if ($accion === "cancelar") {
         $idCita = (int) ($_POST["id_cita"] ?? 0);
 
@@ -315,10 +377,40 @@ details[open] .recipe-toggle::after{content:" abierta";}
 <h2 class="text-2xl font-bold text-gray-900">Panel del Paciente</h2>
 <p class="text-sm text-gray-600">Consulta tus recetas, agenda citas y revisa tu historial clinico.</p>
 </div>
-<div class="flex gap-2 flex-wrap">
-<a href="#recetas" class="btn-outline text-sm">Buscar recetas</a>
-<a href="#agendar" class="btn-main text-sm">Agendar cita</a>
+<div class="flex gap-2 flex-wrap items-center">
+
+    <!-- Perfil -->
+    <a href="mi_perfil.php" 
+       class="btn-outline text-sm flex items-center gap-2">
+
+        <!-- Icono cabeza -->
+        <svg xmlns="http://www.w3.org/2000/svg" 
+             class="w-4 h-4" 
+             fill="none" 
+             viewBox="0 0 24 24" 
+             stroke="currentColor">
+            <path stroke-linecap="round" 
+                  stroke-linejoin="round" 
+                  stroke-width="2" 
+                  d="M5.121 17.804A9 9 0 1118.879 17.804M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+
+        Mi perfil
+    </a>
+
+    <!-- Buscar recetas -->
+    <a href="#recetas" class="btn-outline text-sm">
+        Buscar recetas
+    </a>
+
+    <!-- Agendar cita -->
+    <a href="#agendar" class="btn-main text-sm">
+        Agendar cita
+    </a>
+
 </div>
+
+
 </div>
 
 <?php if ($mensaje): ?>
@@ -348,30 +440,190 @@ details[open] .recipe-toggle::after{content:" abierta";}
 <div class="grid lg:grid-cols-3 gap-5">
 <section class="space-y-5">
 <div id="agendar" class="card-ui p-5">
+
+
+<?php
+// 🔒 ZONA HORARIA (MUY IMPORTANTE)
+date_default_timezone_set('America/El_Salvador');
+
+// 🔹 Obtener fecha seleccionada (por defecto hoy)
+$fechaSeleccionada = isset($_POST['fecha']) ? $_POST['fecha'] : date("Y-m-d");
+
+// 🔹 Hora actual
+$horaActual = date("H:i");
+$fechaHoy = date("Y-m-d");
+
+// 🔹 Generar horarios de 08:00 a 17:30
+$horarios = [];
+for ($h = 8; $h <= 17; $h++) {
+    $horarios[] = sprintf("%02d:00", $h);
+    $horarios[] = sprintf("%02d:30", $h);
+}
+
+// 🔹 Consultar horarios ya reservados
+$horasOcupadas = [];
+
+$stmt = $conn->prepare("SELECT hora, estado FROM CITA WHERE fecha = ?");
+$stmt->bind_param("s", $fechaSeleccionada);
+$stmt->execute();
+$resultado = $stmt->get_result();
+
+while ($fila = $resultado->fetch_assoc()) {
+    $horasOcupadas[$fila["hora"]] = $fila["estado"];
+}
+?>
+
 <h3 class="font-bold mb-4">Agendar cita</h3>
-<form method="POST" class="space-y-3">
+
+<form method="POST" class="space-y-4">
+
 <input type="hidden" name="accion" value="agendar">
-<input type="date" name="fecha" min="<?php echo date("Y-m-d"); ?>" class="input-ui" required>
-<input type="time" name="hora" min="08:00" max="18:00" class="input-ui" required>
+
+<!-- FECHA -->
+<input type="date" name="fecha" 
+       value="<?php echo $fechaSeleccionada; ?>"
+       min="<?php echo date("Y-m-d"); ?>" 
+       class="input-ui" required 
+       onchange="this.form.submit()">
+
+<!-- HORA SELECCIONADA -->
+<input type="hidden" name="hora" id="horaSeleccionada" required>
+
+<!-- MAÑANA -->
+<div>
+<h4 class="font-semibold mb-2">🌅 Mañana</h4>
+<div class="grid grid-cols-4 gap-2">
+
+<?php foreach ($horarios as $hora): ?>
+<?php if ($hora < "12:00"): ?>
+
+<?php
+$clase = "bg-cyan-400 hover:bg-cyan-500 cursor-pointer";
+$texto = "";
+$estadoFinal = "disponible";
+
+// 🔹 Bloquear horas pasadas si es hoy
+if ($fechaSeleccionada === $fechaHoy && $hora <= $horaActual) {
+    $clase = "bg-gray-300 cursor-not-allowed";
+    $estadoFinal = "pasada";
+}
+
+// 🔹 Si está en BD
+if (isset($horasOcupadas[$hora])) {
+    if ($horasOcupadas[$hora] === "confirmada") {
+        $clase = "bg-gray-400 cursor-not-allowed";
+        $estadoFinal = "confirmada";
+    } else {
+        $clase = "bg-yellow-400 cursor-not-allowed";
+        $texto = "<small class='block text-xs'>Horario posible</small>";
+        $estadoFinal = "pendiente";
+    }
+}
+?>
+
+<div 
+class="p-2 text-center rounded text-white text-sm <?php echo $clase; ?>"
+onclick="seleccionarHora('<?php echo $hora; ?>', this)"
+data-estado="<?php echo $estadoFinal; ?>"
+>
+<?php echo $hora; ?>
+<?php echo $texto; ?>
+</div>
+
+<?php endif; ?>
+<?php endforeach; ?>
+
+</div>
+</div>
+
+
+<!-- TARDE -->
+<div>
+<h4 class="font-semibold mb-2 mt-4">🌇 Tarde</h4>
+<div class="grid grid-cols-4 gap-2">
+
+<?php foreach ($horarios as $hora): ?>
+<?php if ($hora >= "13:00"): ?>
+
+<?php
+$clase = "bg-cyan-400 hover:bg-cyan-500 cursor-pointer";
+$texto = "";
+$estadoFinal = "disponible";
+
+// 🔹 Bloquear horas pasadas si es hoy
+if ($fechaSeleccionada === $fechaHoy && $hora <= $horaActual) {
+    $clase = "bg-gray-300 cursor-not-allowed";
+    $estadoFinal = "pasada";
+}
+
+// 🔹 Si está en BD
+if (isset($horasOcupadas[$hora])) {
+    if ($horasOcupadas[$hora] === "confirmada") {
+        $clase = "bg-gray-400 cursor-not-allowed";
+        $estadoFinal = "confirmada";
+    } else {
+        $clase = "bg-yellow-400 cursor-not-allowed";
+        $texto = "<small class='block text-xs'>Horario posible</small>";
+        $estadoFinal = "pendiente";
+    }
+}
+?>
+
+<div 
+class="p-2 text-center rounded text-white text-sm <?php echo $clase; ?>"
+onclick="seleccionarHora('<?php echo $hora; ?>', this)"
+data-estado="<?php echo $estadoFinal; ?>"
+>
+<?php echo $hora; ?>
+<?php echo $texto; ?>
+</div>
+
+<?php endif; ?>
+<?php endforeach; ?>
+
+</div>
+</div>
+
+
+<!-- RESTO DEL FORMULARIO -->
 <select name="tipo" class="input-ui" required>
 <option value="">Tipo de cita</option>
 <option value="limpieza">Limpieza dental</option>
-<option value="revision">Revision general</option>
+<option value="revision">Revisión general</option>
 <option value="emergencia">Emergencia</option>
 <option value="otros">Otros</option>
 </select>
-<select name="doctor" class="input-ui">
-<option value="">Cualquier doctor disponible</option>
-<?php foreach ($doctores as $doctor): ?>
-<option value="<?php echo (int) $doctor["id_doctor"]; ?>">
-<?php echo e($doctor["nombre"] . ($doctor["especialidad"] ? " - " . $doctor["especialidad"] : "")); ?>
-</option>
-<?php endforeach; ?>
-</select>
-<textarea name="observaciones" class="input-ui" rows="3" placeholder="Motivo o comentario para recepcion"></textarea>
+
+<textarea name="observaciones" class="input-ui" rows="3"
+placeholder="Motivo o comentario para recepción"></textarea>
+
 <button class="btn-main w-full">Solicitar cita</button>
+
 </form>
-</div>
+
+
+<!-- SCRIPT CORREGIDO -->
+<script>
+function seleccionarHora(hora, elemento) {
+
+    let estado = elemento.getAttribute("data-estado");
+
+    // 🚫 Bloquear si no está disponible
+    if (estado !== "disponible") {
+        return;
+    }
+
+    // Quitar selección anterior
+    document.querySelectorAll("[data-estado='disponible']")
+        .forEach(e => e.classList.remove("ring-4","ring-blue-900"));
+
+    // Marcar seleccionada
+    elemento.classList.add("ring-4","ring-blue-900");
+
+    // Guardar hora
+    document.getElementById("horaSeleccionada").value = hora;
+}
+</script>
 
 <div class="card-ui p-5">
 <h3 class="font-bold mb-4">Mi expediente</h3>

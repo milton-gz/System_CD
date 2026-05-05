@@ -362,15 +362,24 @@ $puedeAtender = in_array($cita["estado"], ["pendiente", "confirmada"], true);
 <p><strong>Previas:</strong> <?php echo e($cita["enfermedades_previas"] ?: "Sin registrar"); ?></p>
 </div>
 
-<p><strong>Observaciones del paciente:</strong> <?php echo e($cita["observaciones"] ?: "Sin observaciones"); ?></p>
+<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
 
-<?php if ($puedeTomar): ?>
-<form method="POST">
-<input type="hidden" name="accion" value="tomar">
-<input type="hidden" name="id_cita" value="<?php echo (int) $cita["id_cita"]; ?>">
-<button class="btn-main">Tomar y confirmar cita</button>
-</form>
-<?php endif; ?>
+    <p class="flex-1">
+        <strong>Observaciones del paciente:</strong>
+        <?php echo e($cita["observaciones"] ?: "Sin observaciones"); ?>
+    </p>
+
+    <?php if ($cita["estado"] === "pendiente"): ?>
+        <form method="POST" action="../actions/confirmar_cita.php">
+            <input type="hidden" name="accion" value="confirmar">
+            <input type="hidden" name="id_cita" value="<?php echo (int) $cita["id_cita"]; ?>">
+            <button type="submit" class="btn-main text-xs px-4 py-2">
+                Confirmar cita
+            </button>
+        </form>
+    <?php endif; ?>
+
+</div>
 
 <?php if ($puedeAtender): ?>
 <form method="POST" class="space-y-3">
@@ -392,7 +401,10 @@ $puedeAtender = in_array($cita["estado"], ["pendiente", "confirmada"], true);
 
 <div class="flex gap-2 flex-wrap">
 <?php if ($cita["estado"] === "pendiente" && !$puedeTomar): ?>
+
+    
 <button type="submit" name="accion" value="confirmar" class="btn-outline" formnovalidate>Solo confirmar</button>
+
 <?php endif; ?>
 <button class="btn-main">Guardar y marcar atendida</button>
 </div>

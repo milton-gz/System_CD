@@ -86,7 +86,7 @@ elseif ($clave !== $confirmar) {
                     $update->execute();
 
                     //  REDIRECCIÓN DIRECTA
-                    echo "<script>window.location='index.php'</script>";
+                    echo "<script>window.location='validacion.php'</script>";
                     exit;
 
                 } else {
@@ -124,22 +124,7 @@ elseif ($clave !== $confirmar) {
 
                 $user = $res->fetch_assoc();
 
-                // Permite entrar con hashes normales y migra claves temporales heredadas al primer acceso.
-                $passwordOk = password_verify($clave, $user["password"]);
-                $passwordLegacyOk = hash_equals($user["password"], $clave);
-
-                if ($passwordOk || $passwordLegacyOk) {
-
-                    if ($passwordLegacyOk) {
-                        $nuevoHash = password_hash($clave, PASSWORD_DEFAULT);
-                        $rehash = $conn->prepare("
-                            UPDATE USUARIO
-                            SET password = ?
-                            WHERE id_usuario = ?
-                        ");
-                        $rehash->bind_param("si", $nuevoHash, $user["id_usuario"]);
-                        $rehash->execute();
-                    }
+                if (password_verify($clave, $user["password"])) {
 
                     // Crear sesión
                     $_SESSION["id"] = $user["id_usuario"];
@@ -156,7 +141,7 @@ elseif ($clave !== $confirmar) {
                     $update->execute();
 
                     // Redirección según rol
-                   echo "<script>window.location='index.php'</script>";
+                   echo "<script>window.location='validacion.php'</script>";
 exit;
 
                 } else {
