@@ -86,7 +86,7 @@ elseif ($clave !== $confirmar) {
                     $update->execute();
 
                     //  REDIRECCIÓN DIRECTA
-                    echo "<script>window.location='index.php'</script>";
+                    echo "<script>window.location='validacion.php'</script>";
                     exit;
 
                 } else {
@@ -141,7 +141,7 @@ elseif ($clave !== $confirmar) {
                     $update->execute();
 
                     // Redirección según rol
-                   echo "<script>window.location='index.php'</script>";
+                   echo "<script>window.location='validacion.php'</script>";
 exit;
 
                 } else {

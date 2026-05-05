@@ -52,6 +52,13 @@ CREATE TABLE `doctor` (
   `estado` enum('activo','inactivo') DEFAULT 'activo'
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
+--
+-- Volcado de datos para la tabla `doctor`
+--
+
+INSERT INTO `doctor` (`id_doctor`, `USUARIO_id_usuario`, `especialidad`, `telefono`, `estado`) VALUES
+(1, 8, 'Ortodoncia', '7777-2026', 'activo');
+
 -- --------------------------------------------------------
 
 --
@@ -112,7 +119,8 @@ INSERT INTO `paciente` (`id_paciente`, `USUARIO_id_usuario`, `telefono`, `direcc
 (2, 2, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-04-27 15:09:45'),
 (3, 3, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-04-27 15:11:00'),
 (4, 4, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-04-27 15:12:35'),
-(5, 5, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-04-27 15:14:06');
+(5, 5, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-04-27 15:14:06'),
+(6, 6, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-03 22:55:00');
 
 -- --------------------------------------------------------
 
@@ -206,7 +214,10 @@ INSERT INTO `usuario` (`id_usuario`, `ROL_id_rol`, `nombre`, `correo`, `password
 (2, 4, 'Kevin Lemus', 'kaysitoboy@gmail.com', '$2y$10$ka9e.xjaDBBy.4RoiGlTw.NxeQGlOGy5WM6A3eS1CgXzmJnUnTMtm', 'activo', '2026-04-27 15:09:45', '2026-04-27 15:09:45'),
 (3, 4, 'MILTON', 'milton@gmail.com', '$2y$10$weGmpPmK0fO4Fk/S8l5R0OwO8ushEIxAh6anGQyR.1Wtk1P0VT6LC', 'activo', '2026-04-27 15:11:00', '2026-04-27 15:11:00'),
 (4, 4, 'shirley', 'shirley@gmail.com', '$2y$10$jAiB2uUxlE1OI9gQu/EpI.GZy8K6/E7f41ziTutbol31lJkvJewZS', 'activo', '2026-04-27 15:12:35', '2026-04-27 15:12:35'),
-(5, 4, 'otto', 'otto@gmail.com', '$2y$10$q/.aUn4dObVIMGg6jPlGEuYzndzETidZJRt2eM8GTs.3dVKjvsgM.', 'activo', '2026-04-27 15:14:06', '2026-04-27 15:14:06');
+(5, 4, 'otto', 'otto@gmail.com', '$2y$10$q/.aUn4dObVIMGg6jPlGEuYzndzETidZJRt2eM8GTs.3dVKjvsgM.', 'activo', '2026-04-27 15:14:06', '2026-04-27 15:14:06'),
+(6, 4, 'Leandro Lemus', 'leandrolemus800@gmail.con', '1111', 'activo', '2026-05-03 22:55:00', NULL),
+(7, 1, 'Sofia Herrera', 'sofia.admin@dentalguru.test', '$2y$10$T9OlMWgQjBH66becv84Lb.eCYF4l5jac9oCsmzQO9CWX7GbmM8FGa', 'activo', '2026-05-03 23:10:00', NULL),
+(8, 2, 'Dr. Mateo Rivas', 'mateo.doctor@dentalguru.test', '$2y$10$5U8AC/bbGGrHMsQGhF9IVOaS1xnrtBkhY.cHlZcSrYLKwhI8xPXbG', 'activo', '2026-05-03 23:10:00', NULL);
 
 --
 -- Índices para tablas volcadas
@@ -299,7 +310,7 @@ ALTER TABLE `cita`
 -- AUTO_INCREMENT de la tabla `doctor`
 --
 ALTER TABLE `doctor`
-  MODIFY `id_doctor` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_doctor` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT de la tabla `expediente`
@@ -317,7 +328,7 @@ ALTER TABLE `historial_cita`
 -- AUTO_INCREMENT de la tabla `paciente`
 --
 ALTER TABLE `paciente`
-  MODIFY `id_paciente` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id_paciente` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT de la tabla `producto`
@@ -347,7 +358,7 @@ ALTER TABLE `rol`
 -- AUTO_INCREMENT de la tabla `usuario`
 --
 ALTER TABLE `usuario`
-  MODIFY `id_usuario` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id_usuario` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- Restricciones para tablas volcadas

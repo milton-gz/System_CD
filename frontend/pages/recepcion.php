@@ -6,7 +6,7 @@ require_once "../config/conexion.php";
 // 1. VALIDAR SESIÓN
 // =========================
 if (!isset($_SESSION['id'])) {
-    header("Location: ../../login.php");
+    header("Location: ../login.php");
     exit();
 }
 
@@ -31,7 +31,7 @@ if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'recepcion') {
 
         default:
             session_destroy();
-            header("Location: ../../login.php");
+            header("Location: ../login.php");
             break;
     }
 
@@ -43,7 +43,7 @@ if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'recepcion') {
 // =========================
 if (!isset($_SESSION['nombre'])) {
     session_destroy();
-    header("Location: ../../login.php");
+    header("Location: ../login.php");
     exit();
 }
 // ===============================

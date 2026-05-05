@@ -7,7 +7,7 @@ require_once "../config/conexion.php";
 // 1. VALIDAR SESIÓN
 // =========================
 if (!isset($_SESSION['id'])) {
-    header("Location: ../../login.php");
+    header("Location: ../login.php");
     exit();
 }
 
@@ -34,7 +34,7 @@ if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'admin') {
         default:
             // Si no tiene rol válido → fuera
             session_destroy();
-            header("Location: ../../login.php");
+            header("Location: ../login.php");
             break;
     }
 
@@ -46,7 +46,7 @@ if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'admin') {
 // =========================
 if (!isset($_SESSION['nombre'])) {
     session_destroy();
-    header("Location: ../../login.php");
+    header("Location: ../login.php");
     exit();
 }
 
@@ -89,17 +89,22 @@ if ($result) {
 // =========================
 $citas = [];
 
-$usuarios = $conn->query("
-SELECT 
-    U.id_usuario,
-    U.nombre,
-    U.correo,
-    R.nombre AS rol,
-    U.estado,
-    U.ultimo_acceso
-FROM USUARIO U
-JOIN ROL R ON U.ROL_id_rol = R.id_rol
-");
+$sql = "
+SELECT
+    C.id_cita,
+    C.fecha,
+    C.hora,
+    C.tipo,
+    C.estado,
+    UP.nombre AS paciente,
+    UD.nombre AS doctor
+FROM CITA C
+LEFT JOIN PACIENTE P ON P.id_paciente = C.PACIENTE_id_paciente
+LEFT JOIN USUARIO UP ON UP.id_usuario = P.USUARIO_id_usuario
+LEFT JOIN DOCTOR D ON D.id_doctor = C.DOCTOR_id_doctor
+LEFT JOIN USUARIO UD ON UD.id_usuario = D.USUARIO_id_usuario
+ORDER BY C.fecha DESC, C.hora DESC
+LIMIT 50";
 
 $result = $conn->query($sql);
 
@@ -114,7 +119,7 @@ if ($result) {
 // =========================
 $inventario = [];
 
-$sql = "SELECT nombre, categoria, stock, fecha_reposicion FROM PRODUCTO";
+$sql = "SELECT nombre, categoria, stock, fecha_reposicion, estado FROM PRODUCTO";
 
 $result = $conn->query($sql);
 
@@ -316,6 +321,43 @@ class="w-full md:w-80 px-3 py-2 text-sm rounded-xl border mb-4">
 <td>
 <button class="text-blue-500 text-xs">Editar</button>
 <button class="text-red-500 text-xs ml-2">Eliminar</button>
+</td>
+</tr>
+<?php endforeach; ?>
+</tbody>
+</table>
+
+</section>
+
+
+<!-- ================= CITAS ================= -->
+<section id="citas" class="card p-4 tab-content hidden">
+
+<table class="table">
+<thead>
+<tr>
+<th>Paciente</th>
+<th>Doctor</th>
+<th>Fecha</th>
+<th>Hora</th>
+<th>Tipo</th>
+<th>Estado</th>
+</tr>
+</thead>
+
+<tbody>
+<?php foreach ($citas as $c): ?>
+<tr>
+<td><?= htmlspecialchars($c["paciente"] ?? "Sin paciente") ?></td>
+<td><?= htmlspecialchars($c["doctor"] ?? "Sin asignar") ?></td>
+<td><?= htmlspecialchars($c["fecha"] ?? "") ?></td>
+<td><?= htmlspecialchars($c["hora"] ?? "") ?></td>
+<td><?= htmlspecialchars($c["tipo"] ?? "") ?></td>
+<td>
+<span class="badge 
+<?= ($c["estado"] ?? "") == "cancelada" ? "bg-red-100 text-red-700" : (($c["estado"] ?? "") == "atendida" ? "bg-blue-100 text-blue-700" : (($c["estado"] ?? "") == "confirmada" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700")) ?>">
+<?= htmlspecialchars($c["estado"] ?? "pendiente") ?>
+</span>
 </td>
 </tr>
 <?php endforeach; ?>
