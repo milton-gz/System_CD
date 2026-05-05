@@ -21,7 +21,8 @@ if (ini_get("session.use_cookies")) {
 }
 
 /* =========================
-   MENSAJE DE SALIDA
+   REDIRECCIÓN CORRECTA
 ========================= */
-header("Location: ../../login.php?logout=1");
+header("Location: ../login.php?logout=1");
 exit();
+?>
