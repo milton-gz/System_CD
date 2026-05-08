@@ -78,9 +78,6 @@ function generarPassword($longitud = 8) {
     return $password;
 }
 
-/**
- * Envía correo usando PHPMailer
- */
 function enviarCredencialesPHPMailer($correo, $nombre, $passwordPlano) {
     $mail = new PHPMailer(true);
     try {
@@ -88,7 +85,7 @@ function enviarCredencialesPHPMailer($correo, $nombre, $passwordPlano) {
         $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
         $mail->Username   = 'quintanillamarcos468@gmail.com';
-        $mail->Password   = 'atepdkhwmjalmyvm';   // Cámbialo por una variable de entorno en producción
+        $mail->Password   = 'atepdkhwmjalmyvm';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
         $mail->CharSet    = 'UTF-8';
@@ -145,7 +142,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         } else {
             $conn->begin_transaction();
             try {
-                // Verificar si ya existe
                 $stmtCheck = $conn->prepare("SELECT id_usuario FROM USUARIO WHERE correo = ?");
                 $stmtCheck->bind_param("s", $correo);
                 $stmtCheck->execute();
@@ -174,7 +170,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                 $conn->commit();
 
-                // Enviar correo (no detiene el flujo si falla)
                 $correoEnviado = enviarCredencialesPHPMailer($correo, $nombre, $passwordPlano);
                 if ($correoEnviado) {
                     $_SESSION['flash_msg'] = "Paciente creado exitosamente. Se enviaron las credenciales al correo $correo.";
@@ -182,8 +177,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     $_SESSION['flash_msg'] = "Paciente creado, pero no se pudo enviar el correo. Contraseña generada: $passwordPlano (anótala).";
                 }
 
-                // Redirigir con el ID del nuevo paciente para seleccionarlo automáticamente
-                header("Location: recepcion.php?nuevo_paciente=" . $idPaciente);
+                // Redirigir con el ID del nuevo paciente y un hash para desplazarse al formulario de cita
+                header("Location: recepcion.php?nuevo_paciente=" . $idPaciente . "#agendarCita");
                 exit();
 
             } catch (Exception $e) {
@@ -198,7 +193,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         date_default_timezone_set('America/El_Salvador');
         $pacienteId = (int)($_POST["paciente_id"] ?? 0);
         $fecha = trim($_POST["fecha"] ?? "");
-        $hora = trim($_POST["hora"] ?? "");
+        $hora = trim($_POST["hora"] ?? "");      // viene del slot seleccionado
         $tipo = trim($_POST["tipo"] ?? "");
         $doctorId = trim($_POST["doctor"] ?? "");
         $observaciones = trim($_POST["observaciones"] ?? "");
@@ -263,7 +258,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     }
 }
 
-// Recuperar mensajes flash (después de redirección)
+// Recuperar mensajes flash
 if (isset($_SESSION['flash_msg'])) {
     $mensaje = $_SESSION['flash_msg'];
     unset($_SESSION['flash_msg']);
@@ -301,7 +296,7 @@ $stmtCitas = $conn->prepare("
 $stmtCitas->execute();
 $citas = $stmtCitas->get_result()->fetch_all(MYSQLI_ASSOC);
 
-// Recetas (con o sin búsqueda)
+// Recetas
 $recetas = [];
 if ($busquedaReceta !== "") {
     $like = "%" . $busquedaReceta . "%";
@@ -332,7 +327,8 @@ if ($busquedaReceta !== "") {
 $stmtRec->execute();
 $recetas = $stmtRec->get_result()->fetch_all(MYSQLI_ASSOC);
 
-
+// Obtener la fecha seleccionada para el formulario de cita (por defecto hoy)
+$fechaSeleccionada = isset($_POST['fecha']) ? $_POST['fecha'] : date("Y-m-d");
 ?>
 
 <!DOCTYPE html>
@@ -438,7 +434,6 @@ body {
     transition: all 0.2s;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
     gap: 8px;
     border: none;
     cursor: pointer;
@@ -549,6 +544,41 @@ body {
     background: var(--primary-light);
     border-radius: 10px;
 }
+
+/* Estilos para los horarios (igual que en paciente.php) */
+.horario-slot {
+    padding: 8px;
+    text-align: center;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.horario-disponible {
+    background: #eef2ff;
+    color: #4338ca;
+}
+.horario-disponible:hover {
+    background: var(--primary);
+    color: white;
+}
+.horario-ocupado {
+    background: #f1f5f9;
+    color: #94a3b8;
+    cursor: not-allowed;
+}
+.horario-pasado {
+    background: #fef2f2;
+    color: #f87171;
+    cursor: not-allowed;
+    text-decoration: line-through;
+}
+.horario-seleccionado {
+    background: var(--primary);
+    color: white;
+    outline: 2px solid var(--secondary);
+}
 </style>
 </head>
 <body>
@@ -589,7 +619,7 @@ body {
     <nav class="space-y-2">
         <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-lg bg-white/20 transition"><i class="fas fa-home w-5"></i> Inicio</a>
         <a href="#crear" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 transition" onclick="closeMenu()"><i class="fas fa-user-plus w-5"></i> Nuevo paciente</a>
-        <a href="#agendar" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 transition" onclick="closeMenu()"><i class="fas fa-calendar-plus w-5"></i> Agendar cita</a>
+        <a href="#agendarCita" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 transition" onclick="closeMenu()"><i class="fas fa-calendar-plus w-5"></i> Agendar cita</a>
         <a href="#citas" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 transition" onclick="closeMenu()"><i class="fas fa-calendar-alt w-5"></i> Todas las citas</a>
         <a href="#recetas" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 transition" onclick="closeMenu()"><i class="fas fa-prescription-bottle w-5"></i> Buscar recetas</a>
     </nav>
@@ -606,7 +636,7 @@ body {
     </div>
     <div class="flex gap-2 flex-wrap">
         <a href="#crear" class="btn-main text-sm"><i class="fas fa-user-plus mr-1"></i> Nuevo Paciente</a>
-        <a href="#agendar" class="btn-main text-sm"><i class="fas fa-calendar-plus mr-1"></i> Agendar Cita</a>
+        <a href="#agendarCita" class="btn-main text-sm"><i class="fas fa-calendar-plus mr-1"></i> Agendar Cita</a>
         <a href="#recetas" class="btn-outline text-sm"><i class="fas fa-search mr-1"></i> Buscar Recetas</a>
     </div>
 </div>
@@ -647,20 +677,21 @@ body {
             <p class="text-xs text-gray-400 mt-3"><i class="fas fa-info-circle mr-1"></i> La contraseña se genera automáticamente y se envía al correo</p>
         </div>
 
-        <!-- Formulario agendar cita con buscador y autoselección -->
-        <div id="agendar" class="card-ui p-5">
+        <!-- Formulario agendar cita (con selector visual de horarios) -->
+        <div id="agendarCita" class="card-ui p-5">
             <h3 class="font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <i class="fas fa-calendar-plus text-[#7c6fb0]"></i> Agendar cita
             </h3>
-            <form method="POST">
+            <form method="POST" id="formAgendarCita">
                 <input type="hidden" name="accion" value="agendar_cita">
-                <div class="space-y-3">
+                <input type="hidden" name="hora" id="horaSeleccionada" required>
+                
+                <div class="space-y-4">
                     <!-- Buscador de pacientes -->
                     <div class="relative">
                         <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
                         <input type="text" id="buscadorPaciente" class="input-ui pl-9 py-2 text-sm" placeholder="🔍 Buscar paciente por nombre o correo..." autocomplete="off">
                     </div>
-                    <!-- Select de pacientes (se filtrará dinámicamente) -->
                     <select name="paciente_id" id="pacienteSelect" class="input-ui" required size="6" style="height: auto; min-height: 140px;">
                         <option value="">-- Seleccione un paciente --</option>
                         <?php foreach ($pacientes as $pac): ?>
@@ -671,8 +702,26 @@ body {
                         <?php endforeach; ?>
                     </select>
                     
-                    <input type="date" name="fecha" class="input-ui" required min="<?php echo date("Y-m-d"); ?>">
-                    <input type="time" name="hora" class="input-ui" required step="1800">
+                    <!-- FECHA -->
+                    <input type="date" name="fecha" id="fechaCita" class="input-ui" required min="<?php echo date("Y-m-d"); ?>" value="<?php echo $fechaSeleccionada; ?>">
+                    
+                    <!-- SELECTOR DE HORAS (grid dinámico) -->
+                    <div>
+                        <h4 class="font-semibold mb-2 text-gray-700">Mañana</h4>
+                        <div class="grid grid-cols-4 gap-2" id="horarioManana"></div>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold mb-2 mt-2 text-gray-700">Tarde</h4>
+                        <div class="grid grid-cols-4 gap-2" id="horarioTarde"></div>
+                    </div>
+                    
+                    <select name="doctor" class="input-ui">
+                        <option value="">Cualquier doctor (opcional)</option>
+                        <?php foreach ($doctores as $doc): ?>
+                            <option value="<?php echo $doc['id_doctor']; ?>"><?php echo e($doc['nombre']); ?> (<?php echo e($doc['especialidad']); ?>)</option>
+                        <?php endforeach; ?>
+                    </select>
+                    
                     <select name="tipo" class="input-ui" required>
                         <option value="">Tipo de cita</option>
                         <option value="limpieza">Limpieza dental</option>
@@ -680,14 +729,10 @@ body {
                         <option value="emergencia">Emergencia</option>
                         <option value="otros">Otros</option>
                     </select>
-                    <select name="doctor" class="input-ui">
-                        <option value="">Cualquier doctor (opcional)</option>
-                        <?php foreach ($doctores as $doc): ?>
-                            <option value="<?php echo $doc['id_doctor']; ?>"><?php echo e($doc['nombre']); ?> (<?php echo e($doc['especialidad']); ?>)</option>
-                        <?php endforeach; ?>
-                    </select>
+                    
                     <textarea name="observaciones" rows="2" placeholder="Observaciones" class="input-ui"></textarea>
-                    <button class="btn-main w-full"><i class="fas fa-calendar-check mr-1"></i> Agendar cita</button>
+                    
+                    <button class="btn-main w-full" type="submit"><i class="fas fa-calendar-check mr-1"></i> Agendar cita</button>
                 </div>
             </form>
         </div>
@@ -810,18 +855,17 @@ body {
 </footer>
 
 <script>
+// Funciones de menú móvil
 function openMenu() {
     document.getElementById("menu").classList.add("active");
     document.getElementById("overlay").classList.add("active");
     document.body.style.overflow = "hidden";
 }
-
 function closeMenu() {
     document.getElementById("menu").classList.remove("active");
     document.getElementById("overlay").classList.remove("active");
     document.body.style.overflow = "";
 }
-
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') closeMenu();
 });
@@ -839,7 +883,7 @@ if (searchInput) {
     });
 }
 
-// Buscador de pacientes en tiempo real (filtro sobre el select)
+// Buscador de pacientes (filtro sobre el select)
 const buscador = document.getElementById('buscadorPaciente');
 const selectPaciente = document.getElementById('pacienteSelect');
 
@@ -878,16 +922,103 @@ if (buscador && selectPaciente) {
         }
     });
     
+    // Si hay un nuevo paciente, actualizamos el texto del buscador
     <?php if ($nuevoPacienteId > 0): ?>
         const pacienteSeleccionado = Array.from(selectPaciente.options).find(opt => opt.value == <?php echo $nuevoPacienteId; ?>);
         if (pacienteSeleccionado) {
             buscador.value = pacienteSeleccionado.textContent.trim();
             buscador.dispatchEvent(new Event('input'));
+            // Desplazar al formulario de cita
+            document.getElementById('agendarCita').scrollIntoView({ behavior: 'smooth' });
         }
     <?php endif; ?>
 }
+
+// ========================
+// SELECTOR DINÁMICO DE HORARIOS (como en paciente.php)
+// ========================
+const fechaInput = document.getElementById('fechaCita');
+const contenedorManana = document.getElementById('horarioManana');
+const contenedorTarde = document.getElementById('horarioTarde');
+let horaSeleccionadaInput = document.getElementById('horaSeleccionada');
+
+// Generar horarios de 08:00 a 17:30
+const horarios = [];
+for (let h = 8; h <= 17; h++) {
+    horarios.push(`${h.toString().padStart(2,'0')}:00`);
+    horarios.push(`${h.toString().padStart(2,'0')}:30`);
+}
+
+// Función para cargar horarios disponibles según la fecha
+function cargarHorarios() {
+    const fecha = fechaInput.value;
+    if (!fecha) return;
+    
+    // Obtener citas existentes para esa fecha vía AJAX
+    fetch(`obtener_citas_fecha.php?fecha=${encodeURIComponent(fecha)}`)
+        .then(response => response.json())
+        .then(data => {
+            const ocupadas = data.ocupadas || []; // array de horas ocupadas (strings "HH:MM")
+            const ahora = new Date();
+            const hoy = ahora.toISOString().slice(0,10);
+            const horaActual = ahora.getHours() + ":" + ahora.getMinutes().toString().padStart(2,'0');
+            
+            // Limpiar contenedores
+            contenedorManana.innerHTML = '';
+            contenedorTarde.innerHTML = '';
+            
+            horarios.forEach(hora => {
+                let estado = 'disponible';
+                let esPasado = false;
+                if (fecha === hoy && hora < horaActual) {
+                    estado = 'pasado';
+                    esPasado = true;
+                }
+                if (ocupadas.includes(hora)) {
+                    estado = 'ocupado';
+                }
+                const div = document.createElement('div');
+                div.className = `horario-slot horario-${estado}`;
+                div.textContent = hora;
+                if (estado === 'disponible') {
+                    div.onclick = () => seleccionarHora(hora, div);
+                } else {
+                    div.onclick = null;
+                }
+                // Clasificar mañana (<12:00) o tarde (>=13:00)
+                const horaNum = parseInt(hora.split(':')[0]);
+                if (horaNum < 12) {
+                    contenedorManana.appendChild(div);
+                } else if (horaNum >= 13) {
+                    contenedorTarde.appendChild(div);
+                }
+            });
+        })
+        .catch(error => console.error('Error cargando horarios:', error));
+}
+
+function seleccionarHora(hora, elemento) {
+    // Remover clase seleccionada de todos los slots
+    document.querySelectorAll('.horario-slot').forEach(slot => {
+        slot.classList.remove('horario-seleccionado');
+    });
+    elemento.classList.add('horario-seleccionado');
+    horaSeleccionadaInput.value = hora;
+}
+
+// Cuando cambie la fecha, recargar horarios
+fechaInput.addEventListener('change', cargarHorarios);
+// Cargar al inicio
+cargarHorarios();
+
+// Enviar formulario solo si se ha seleccionado una hora
+document.getElementById('formAgendarCita').addEventListener('submit', function(e) {
+    if (!horaSeleccionadaInput.value) {
+        e.preventDefault();
+        alert('Por favor selecciona una hora disponible para la cita.');
+    }
+});
 </script>
 
 </body>
 </html>
-
