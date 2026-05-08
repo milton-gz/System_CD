@@ -23,6 +23,7 @@ $rol = $_SESSION['rol'];
 // Redirección según rol
 switch ($rol) {
 
+<<<<<<< HEAD
     case "admin":
         header("Location: pages/admin.php");
         exit();
@@ -36,6 +37,21 @@ switch ($rol) {
         exit();
 
     case "recepcion":
+=======
+    case "Admin":
+        header("Location: pages/admin.php");
+        exit();
+
+    case "Doctor":
+        header("Location: pages/doctor.php");
+        exit();
+
+    case "Paciente":
+        header("Location: pages/paciente.php");
+        exit();
+
+    case "Recepcion":
+>>>>>>> bc6db354622c1318c78d58dfb8c6f53b9bf0bbb5
         header("Location: pages/recepcion.php");
         exit();
 
