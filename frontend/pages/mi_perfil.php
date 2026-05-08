@@ -100,17 +100,23 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $mail->isHTML(true);
                 $mail->Subject = "Perfil actualizado - Dental Guru";
                 $mail->Body = "
-                    <div style='font-family:Arial;padding:20px'>
-                        <h2 style='color:#7c6fb0;'>Hola {$perfil['nombre']}</h2>
-                        <p>Tu perfil fue actualizado correctamente.</p>
-                        <hr>
-                        <p><strong>Telefono:</strong> {$telefono}</p>
-                        <p><strong>Direccion:</strong> {$direccion}</p>
-                        <p><strong>Edad:</strong> {$edad}</p>
-                        <p><strong>Sexo:</strong> {$sexo}</p>
-                        <p><strong>Tipo sangre:</strong> {$tipo_sangre}</p>
+                    <div style='font-family:Arial, sans-serif;padding:20px;max-width:600px;margin:0 auto;border:1px solid #e0e0e0;border-radius:8px;'>
+                        <meta charset='UTF-8'>
+                        <div style='text-align:center;margin-bottom:20px;'>
+                            🦷 <span style='font-size:24px;font-weight:bold;color:#7c6fb0;'>Dental Guru</span>
+                        </div>
+                        <h2 style='color:#7c6fb0;'>👋 Hola {$perfil['nombre']}</h2>
+                        <p>✅ Tu perfil se ha <strong>actualizado correctamente</strong>.</p>
+                        <hr style='margin:20px 0;'>
+                        <p>📞 <strong>Teléfono:</strong> {$telefono}</p>
+                        <p>🏠 <strong>Dirección:</strong> {$direccion}</p>
+                        <p>🎂 <strong>Edad:</strong> {$edad} años</p>
+                        <p>⚧ <strong>Sexo:</strong> {$sexo}</p>
+                        <p>🩸 <strong>Tipo de sangre:</strong> {$tipo_sangre}</p>
+                        " . (!empty($alergias) ? "<p>⚠️ <strong>Alergias:</strong> {$alergias}</p>" : "") . "
+                        " . (!empty($enfermedades) ? "<p>📋 <strong>Enfermedades previas:</strong> {$enfermedades}</p>" : "") . "
                         <br>
-                        <small>Dental Guru © 2026</small>
+                        <small style='color:#999;'>✉️ Este es un correo automático, no respondas a esta dirección.<br>🦷 Dental Guru © 2026</small>
                     </div>
                 ";
                 $mail->send();

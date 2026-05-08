@@ -2,17 +2,29 @@
 session_start();
 require_once "../config/conexion.php";
 
+// ============================================================
+// PHPMailer
+// ============================================================
+require_once "../../PHPMailer/src/Exception.php";
+require_once "../../PHPMailer/src/PHPMailer.php";
+require_once "../../PHPMailer/src/SMTP.php";
+
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+// ============================================================
 // Verificar sesión y rol
+// ============================================================
 if (!isset($_SESSION['id'])) {
     header("Location: ../login.php");
     exit();
 }
 
-if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'recepcion') {
+if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'Recepcion') {
     switch ($_SESSION['rol'] ?? '') {
-        case "admin": header("Location: admin.php"); break;
-        case "doctor": header("Location: doctor.php"); break;
-        case "paciente": header("Location: paciente.php"); break;
+        case "Admin": header("Location: admin.php"); break;
+        case "Doctor": header("Location: doctor.php"); break;
+        case "Paciente": header("Location: paciente.php"); break;
         default: session_destroy(); header("Location: ../login.php"); break;
     }
     exit();
@@ -28,8 +40,11 @@ $nombreRecepcion = $_SESSION['nombre'];
 $mensaje = "";
 $error = "";
 $busquedaReceta = trim($_GET['buscar_receta'] ?? "");
+$nuevoPacienteId = isset($_GET['nuevo_paciente']) ? (int)$_GET['nuevo_paciente'] : 0;
 
+// ============================================================
 // Funciones auxiliares
+// ============================================================
 function e($value) {
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
@@ -54,7 +69,6 @@ function tipoTexto($tipo) {
     return $map[$tipo] ?? ucfirst((string) $tipo);
 }
 
-// Generador de contraseña aleatoria
 function generarPassword($longitud = 8) {
     $caracteres = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
     $password = '';
@@ -64,25 +78,57 @@ function generarPassword($longitud = 8) {
     return $password;
 }
 
-// Envío de correo
-function enviarCredenciales($correo, $nombre, $passwordPlano) {
-    $asunto = "Bienvenido a Dental Guru - Tus credenciales de acceso";
-    $mensaje = "Hola $nombre,\n\n";
-    $mensaje .= "Tu cuenta ha sido creada exitosamente en el sistema Dental Guru.\n";
-    $mensaje .= "Tu correo de acceso es: $correo\n";
-    $mensaje .= "Tu contraseña temporal es: $passwordPlano\n\n";
-    $mensaje .= "Por seguridad, cambia tu contraseña después de iniciar sesión.\n";
-    $mensaje .= "Accede al sistema: http://tudominio.com/login.php\n\n";
-    $mensaje .= "Saludos,\nEquipo Dental Guru";
-    $cabeceras = "From: no-reply@dentalguru.com\r\n";
-    return mail($correo, $asunto, $mensaje, $cabeceras);
+/**
+ * Envía correo usando PHPMailer
+ */
+function enviarCredencialesPHPMailer($correo, $nombre, $passwordPlano) {
+    $mail = new PHPMailer(true);
+    try {
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = 'quintanillamarcos468@gmail.com';
+        $mail->Password   = 'atepdkhwmjalmyvm';   // Cámbialo por una variable de entorno en producción
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
+        $mail->CharSet    = 'UTF-8';
+
+        $mail->setFrom('quintanillamarcos468@gmail.com', 'Dental Guru');
+        $mail->addAddress($correo, $nombre);
+
+        $mail->isHTML(true);
+        $mail->Subject = "Bienvenido a Dental Guru - Tus credenciales de acceso";
+
+        $mail->Body = "
+            <div style='font-family: Arial; padding:20px'>
+                <h2>Hola $nombre,</h2>
+                <p>Tu cuenta ha sido creada exitosamente en el sistema Dental Guru.</p>
+                <p><strong>Correo de acceso:</strong> $correo</p>
+                <p><strong>Contraseña temporal:</strong> $passwordPlano</p>
+                <br>
+                <p>Por seguridad, cambia tu contraseña después de iniciar sesión.</p>
+                <a href='/login.php'>Acceder al sistema</a>
+                <br><br>
+                <small>Equipo Dental Guru</small>
+            </div>
+        ";
+        $mail->AltBody = "Hola $nombre, tu cuenta ha sido creada. Correo: $correo, Contraseña: $passwordPlano. Accede a http://tudominio.com/login.php";
+
+        $mail->send();
+        return true;
+    } catch (Exception $e) {
+        error_log("Error enviando correo a $correo: " . $mail->ErrorInfo);
+        return false;
+    }
 }
 
+// ============================================================
 // Procesar acciones POST
+// ============================================================
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $accion = $_POST["accion"] ?? "";
 
-    // CREAR NUEVO PACIENTE
+    // ---------- CREAR NUEVO PACIENTE ----------
     if ($accion === "crear_paciente") {
         $nombre = trim($_POST["nombre"] ?? "");
         $correo = trim($_POST["correo"] ?? "");
@@ -95,15 +141,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         if ($nombre === "" || $correo === "") {
             $error = "Nombre y correo son obligatorios.";
         } elseif (!filter_var($correo, FILTER_VALIDATE_EMAIL)) {
-            $error = "Correo electrónico no valido.";
+            $error = "Correo electrónico no válido.";
         } else {
-            $stmtCheck = $conn->prepare("SELECT id_usuario FROM USUARIO WHERE correo = ?");
-            $stmtCheck->bind_param("s", $correo);
-            $stmtCheck->execute();
-            $existe = $stmtCheck->get_result()->fetch_assoc();
-            if ($existe) {
-                $error = "Ya existe un usuario con ese correo electronico.";
-            } else {
+            $conn->begin_transaction();
+            try {
+                // Verificar si ya existe
+                $stmtCheck = $conn->prepare("SELECT id_usuario FROM USUARIO WHERE correo = ?");
+                $stmtCheck->bind_param("s", $correo);
+                $stmtCheck->execute();
+                if ($stmtCheck->get_result()->fetch_assoc()) {
+                    throw new Exception("Ya existe un usuario con ese correo electrónico.");
+                }
+
                 $passwordPlano = generarPassword(8);
                 $passwordHash = password_hash($passwordPlano, PASSWORD_DEFAULT);
                 $rol = 'paciente';
@@ -111,29 +160,40 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                 $stmt = $conn->prepare("INSERT INTO USUARIO (nombre, correo, password, rol, estado) VALUES (?, ?, ?, ?, ?)");
                 $stmt->bind_param("sssss", $nombre, $correo, $passwordHash, $rol, $estado);
-                if ($stmt->execute()) {
-                    $idUsuario = $conn->insert_id;
-
-                    $stmt2 = $conn->prepare("INSERT INTO PACIENTE (USUARIO_id_usuario, telefono, edad, tipo_sangre, alergias, direccion) VALUES (?, ?, ?, ?, ?, ?)");
-                    $stmt2->bind_param("isssss", $idUsuario, $telefono, $edad, $tipoSangre, $alergias, $direccion);
-                    if ($stmt2->execute()) {
-                        if (enviarCredenciales($correo, $nombre, $passwordPlano)) {
-                            $mensaje = "Paciente creado exitosamente. Se enviaron las credenciales al correo $correo.";
-                        } else {
-                            $mensaje = "Paciente creado, pero no se pudo enviar el correo. Contraseña generada: $passwordPlano (anotala).";
-                        }
-                    } else {
-                        $error = "Error al crear el registro en PACIENTE.";
-                        $conn->query("DELETE FROM USUARIO WHERE id_usuario = $idUsuario");
-                    }
-                } else {
-                    $error = "Error al crear el usuario: " . $conn->error;
+                if (!$stmt->execute()) {
+                    throw new Exception("Error al crear el usuario: " . $conn->error);
                 }
+                $idUsuario = $conn->insert_id;
+
+                $stmt2 = $conn->prepare("INSERT INTO PACIENTE (USUARIO_id_usuario, telefono, edad, tipo_sangre, alergias, direccion) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmt2->bind_param("isssss", $idUsuario, $telefono, $edad, $tipoSangre, $alergias, $direccion);
+                if (!$stmt2->execute()) {
+                    throw new Exception("Error al crear el registro en PACIENTE.");
+                }
+                $idPaciente = $conn->insert_id;
+
+                $conn->commit();
+
+                // Enviar correo (no detiene el flujo si falla)
+                $correoEnviado = enviarCredencialesPHPMailer($correo, $nombre, $passwordPlano);
+                if ($correoEnviado) {
+                    $_SESSION['flash_msg'] = "Paciente creado exitosamente. Se enviaron las credenciales al correo $correo.";
+                } else {
+                    $_SESSION['flash_msg'] = "Paciente creado, pero no se pudo enviar el correo. Contraseña generada: $passwordPlano (anótala).";
+                }
+
+                // Redirigir con el ID del nuevo paciente para seleccionarlo automáticamente
+                header("Location: recepcion.php?nuevo_paciente=" . $idPaciente);
+                exit();
+
+            } catch (Exception $e) {
+                $conn->rollback();
+                $error = $e->getMessage();
             }
         }
     }
 
-    // AGENDAR CITA
+    // ---------- AGENDAR CITA ----------
     if ($accion === "agendar_cita") {
         date_default_timezone_set('America/El_Salvador');
         $pacienteId = (int)($_POST["paciente_id"] ?? 0);
@@ -179,7 +239,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         }
     }
 
-    // CANCELAR CITA
+    // ---------- CANCELAR CITA ----------
     if ($accion === "cancelar_cita") {
         $idCita = (int)($_POST["id_cita"] ?? 0);
         $stmt = $conn->prepare("SELECT estado FROM CITA WHERE id_cita = ? AND estado IN ('pendiente','confirmada')");
@@ -203,21 +263,31 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     }
 }
 
-// Obtener listado de pacientes
+// Recuperar mensajes flash (después de redirección)
+if (isset($_SESSION['flash_msg'])) {
+    $mensaje = $_SESSION['flash_msg'];
+    unset($_SESSION['flash_msg']);
+}
+
+// ============================================================
+// Obtener datos para la vista
+// ============================================================
+
+// Pacientes
 $pacientes = [];
 $resPac = $conn->query("SELECT P.id_paciente, U.nombre, U.correo FROM PACIENTE P JOIN USUARIO U ON U.id_usuario = P.USUARIO_id_usuario WHERE U.estado = 'activo' ORDER BY U.nombre");
 if ($resPac) {
     while ($row = $resPac->fetch_assoc()) $pacientes[] = $row;
 }
 
-// Obtener listado de doctores activos
+// Doctores activos
 $doctores = [];
 $resDoc = $conn->query("SELECT D.id_doctor, U.nombre, D.especialidad FROM DOCTOR D JOIN USUARIO U ON U.id_usuario = D.USUARIO_id_usuario WHERE D.estado = 'activo' ORDER BY U.nombre");
 if ($resDoc) {
     while ($row = $resDoc->fetch_assoc()) $doctores[] = $row;
 }
 
-// Listado de todas las citas
+// Todas las citas
 $citas = [];
 $stmtCitas = $conn->prepare("
     SELECT C.*, U_pac.nombre AS paciente_nombre, U_doc.nombre AS doctor_nombre, D.especialidad
@@ -231,7 +301,7 @@ $stmtCitas = $conn->prepare("
 $stmtCitas->execute();
 $citas = $stmtCitas->get_result()->fetch_all(MYSQLI_ASSOC);
 
-// Búsqueda de recetas
+// Recetas (con o sin búsqueda)
 $recetas = [];
 if ($busquedaReceta !== "") {
     $like = "%" . $busquedaReceta . "%";
@@ -261,6 +331,8 @@ if ($busquedaReceta !== "") {
 }
 $stmtRec->execute();
 $recetas = $stmtRec->get_result()->fetch_all(MYSQLI_ASSOC);
+
+
 ?>
 
 <!DOCTYPE html>
@@ -281,13 +353,11 @@ $recetas = $stmtRec->get_result()->fetch_all(MYSQLI_ASSOC);
     --secondary: #8cd4ae;
     --secondary-dark: #6ab88e;
 }
-
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
-
 body {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     background: #f5f7fb;
@@ -295,8 +365,6 @@ body {
     display: flex;
     flex-direction: column;
 }
-
-/* HEADER */
 .header {
     background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
     color: white;
@@ -305,8 +373,6 @@ body {
     z-index: 100;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
-
-/* MENU LATERAL */
 .mobile-menu {
     position: fixed;
     top: 0;
@@ -321,7 +387,6 @@ body {
     box-shadow: -5px 0 30px rgba(0, 0, 0, 0.2);
 }
 .mobile-menu.active { right: 0; }
-
 .overlay {
     position: fixed;
     top: 0;
@@ -338,8 +403,6 @@ body {
     opacity: 1;
     visibility: visible;
 }
-
-/* CARDS */
 .card-ui {
     background: white;
     border-radius: 20px;
@@ -351,8 +414,6 @@ body {
     transform: translateY(-2px);
     box-shadow: 0 8px 24px rgba(124, 111, 176, 0.12);
 }
-
-/* INPUTS */
 .input-ui {
     width: 100%;
     padding: 10px 14px;
@@ -367,12 +428,6 @@ body {
     border-color: var(--primary);
     box-shadow: 0 0 0 3px rgba(124, 111, 176, 0.1);
 }
-
-select.input-ui, textarea.input-ui {
-    background: #fafcff;
-}
-
-/* BOTONES */
 .btn-main {
     background: linear-gradient(135deg, var(--secondary) 0%, var(--secondary-dark) 100%);
     color: #1a2e2a;
@@ -392,7 +447,6 @@ select.input-ui, textarea.input-ui {
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(140, 212, 174, 0.35);
 }
-
 .btn-outline {
     background: transparent;
     border: 1.5px solid var(--primary-light);
@@ -412,8 +466,6 @@ select.input-ui, textarea.input-ui {
     color: white;
     transform: translateY(-1px);
 }
-
-/* BADGES */
 .badge-fix {
     display: inline-flex;
     align-items: center;
@@ -424,8 +476,6 @@ select.input-ui, textarea.input-ui {
     font-weight: 700;
     text-transform: capitalize;
 }
-
-/* RECETAS */
 .recipe-toggle {
     background: var(--secondary);
     color: #1a2e2a;
@@ -439,13 +489,10 @@ select.input-ui, textarea.input-ui {
     background: var(--secondary-dark);
     transform: translateY(-1px);
 }
-
-/* FOOTER */
 .footer-ui {
     background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
     margin-top: auto;
 }
-
 .team-container {
     position: relative;
     display: inline-block;
@@ -483,8 +530,6 @@ select.input-ui, textarea.input-ui {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
 }
-
-/* ANIMACIONES */
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
@@ -492,8 +537,6 @@ select.input-ui, textarea.input-ui {
 .fade-in {
     animation: fadeIn 0.4s ease-out forwards;
 }
-
-/* SCROLLBAR */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -508,16 +551,14 @@ select.input-ui, textarea.input-ui {
 }
 </style>
 </head>
-
 <body>
 
-<!-- HEADER CON HAMBURGUESA -->
 <header class="header px-5 md:px-8 py-3 flex items-center justify-between">
     <div class="flex items-center gap-3">
         <img src="../assets/logo.png" class="w-28 rounded-xl shadow-sm" alt="Dental Guru" onerror="this.style.display='none'">
         <div class="hidden md:block">
             <p class="font-semibold text-white">Dental Guru</p>
-            <p class="text-[11px] text-white/70">Area de recepcion</p>
+            <p class="text-[11px] text-white/70">Área de recepción</p>
         </div>
     </div>
     <div class="flex items-center gap-3">
@@ -530,7 +571,6 @@ select.input-ui, textarea.input-ui {
     </div>
 </header>
 
-<!-- OVERLAY Y MENU LATERAL -->
 <div id="overlay" class="overlay" onclick="closeMenu()"></div>
 <div id="menu" class="mobile-menu">
     <div class="flex justify-between items-center mb-6 pb-3 border-b border-white/20">
@@ -554,16 +594,15 @@ select.input-ui, textarea.input-ui {
         <a href="#recetas" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 transition" onclick="closeMenu()"><i class="fas fa-prescription-bottle w-5"></i> Buscar recetas</a>
     </nav>
     <hr class="my-4 border-white/20">
-    <a href="../config/cerrar_sesion.php" class="flex items-center gap-3 px-3 py-2 rounded-lg text-red-300 hover:bg-white/10 transition"><i class="fas fa-sign-out-alt w-5"></i> Cerrar sesion</a>
+    <a href="../config/cerrar_sesion.php" class="flex items-center gap-3 px-3 py-2 rounded-lg text-red-300 hover:bg-white/10 transition"><i class="fas fa-sign-out-alt w-5"></i> Cerrar sesión</a>
 </div>
 
-<!-- MAIN CONTENT -->
 <main class="flex-1 max-w-7xl mx-auto w-full p-4 md:p-6 fade-in">
 
 <div class="flex flex-col md:flex-row md:justify-between gap-3 mb-6">
     <div>
-        <h2 class="text-2xl font-bold text-gray-800">Panel de Recepcion</h2>
-        <p class="text-sm text-gray-500">Gestion de pacientes, citas y consulta de recetas</p>
+        <h2 class="text-2xl font-bold text-gray-800">Panel de Recepción</h2>
+        <p class="text-sm text-gray-500">Gestión de pacientes, citas y consulta de recetas</p>
     </div>
     <div class="flex gap-2 flex-wrap">
         <a href="#crear" class="btn-main text-sm"><i class="fas fa-user-plus mr-1"></i> Nuevo Paciente</a>
@@ -596,19 +635,19 @@ select.input-ui, textarea.input-ui {
                 <input type="hidden" name="accion" value="crear_paciente">
                 <div class="space-y-3">
                     <input type="text" name="nombre" placeholder="Nombre completo *" class="input-ui" required>
-                    <input type="email" name="correo" placeholder="Correo electronico *" class="input-ui" required>
-                    <input type="tel" name="telefono" placeholder="Telefono" class="input-ui">
+                    <input type="email" name="correo" placeholder="Correo electrónico *" class="input-ui" required>
+                    <input type="tel" name="telefono" placeholder="Teléfono" class="input-ui">
                     <input type="number" name="edad" placeholder="Edad" class="input-ui">
                     <input type="text" name="tipo_sangre" placeholder="Tipo de sangre" class="input-ui">
-                    <input type="text" name="direccion" placeholder="Direccion" class="input-ui">
+                    <input type="text" name="direccion" placeholder="Dirección" class="input-ui">
                     <textarea name="alergias" rows="2" placeholder="Alergias" class="input-ui"></textarea>
                     <button class="btn-main w-full"><i class="fas fa-save mr-1"></i> Crear paciente</button>
                 </div>
             </form>
-            <p class="text-xs text-gray-400 mt-3"><i class="fas fa-info-circle mr-1"></i> La contraseña se genera automaticamente y se envia al correo</p>
+            <p class="text-xs text-gray-400 mt-3"><i class="fas fa-info-circle mr-1"></i> La contraseña se genera automáticamente y se envía al correo</p>
         </div>
 
-        <!-- Formulario agendar cita -->
+        <!-- Formulario agendar cita con buscador y autoselección -->
         <div id="agendar" class="card-ui p-5">
             <h3 class="font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <i class="fas fa-calendar-plus text-[#7c6fb0]"></i> Agendar cita
@@ -616,18 +655,28 @@ select.input-ui, textarea.input-ui {
             <form method="POST">
                 <input type="hidden" name="accion" value="agendar_cita">
                 <div class="space-y-3">
-                    <select name="paciente_id" class="input-ui" required>
-                        <option value="">Seleccionar paciente</option>
+                    <!-- Buscador de pacientes -->
+                    <div class="relative">
+                        <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
+                        <input type="text" id="buscadorPaciente" class="input-ui pl-9 py-2 text-sm" placeholder="🔍 Buscar paciente por nombre o correo..." autocomplete="off">
+                    </div>
+                    <!-- Select de pacientes (se filtrará dinámicamente) -->
+                    <select name="paciente_id" id="pacienteSelect" class="input-ui" required size="6" style="height: auto; min-height: 140px;">
+                        <option value="">-- Seleccione un paciente --</option>
                         <?php foreach ($pacientes as $pac): ?>
-                            <option value="<?php echo $pac['id_paciente']; ?>"><?php echo e($pac['nombre']); ?> (<?php echo e($pac['correo']); ?>)</option>
+                            <option value="<?php echo $pac['id_paciente']; ?>" 
+                                <?php echo ($nuevoPacienteId == $pac['id_paciente']) ? 'selected' : ''; ?>>
+                                <?php echo e($pac['nombre']); ?> (<?php echo e($pac['correo']); ?>)
+                            </option>
                         <?php endforeach; ?>
                     </select>
+                    
                     <input type="date" name="fecha" class="input-ui" required min="<?php echo date("Y-m-d"); ?>">
                     <input type="time" name="hora" class="input-ui" required step="1800">
                     <select name="tipo" class="input-ui" required>
                         <option value="">Tipo de cita</option>
                         <option value="limpieza">Limpieza dental</option>
-                        <option value="revision">Revision general</option>
+                        <option value="revision">Revisión general</option>
                         <option value="emergencia">Emergencia</option>
                         <option value="otros">Otros</option>
                     </select>
@@ -684,7 +733,7 @@ select.input-ui, textarea.input-ui {
                             <p class="md:col-span-2"><i class="fas fa-comment text-[#7c6fb0] w-5"></i> <strong>Observaciones:</strong> <?php echo e($cita['observaciones'] ?: 'Sin observaciones'); ?></p>
                         </div>
                         <?php if ($puedeCancelar): ?>
-                        <form method="POST" onsubmit="return confirm('Cancelar esta cita?');" class="mt-2">
+                        <form method="POST" onsubmit="return confirm('¿Cancelar esta cita?');" class="mt-2">
                             <input type="hidden" name="accion" value="cancelar_cita">
                             <input type="hidden" name="id_cita" value="<?php echo $cita['id_cita']; ?>">
                             <button class="btn-outline text-rose-600 border-rose-200 hover:bg-rose-600 hover:text-white text-sm"><i class="fas fa-times mr-1"></i>Cancelar cita</button>
@@ -696,7 +745,7 @@ select.input-ui, textarea.input-ui {
             </div>
         </div>
 
-        <!-- Busqueda de recetas -->
+        <!-- Búsqueda de recetas -->
         <div id="recetas" class="card-ui p-5">
             <div class="flex flex-col md:flex-row md:justify-between gap-3 mb-4">
                 <h3 class="font-bold text-gray-800 flex items-center gap-2">
@@ -706,7 +755,7 @@ select.input-ui, textarea.input-ui {
                 <form method="GET" class="flex gap-2">
                     <div class="relative">
                         <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
-                        <input type="text" name="buscar_receta" value="<?php echo e($busquedaReceta); ?>" class="input-ui pl-9 py-2 text-sm w-full md:w-64" placeholder="Medicamento, dosis o diagnostico">
+                        <input type="text" name="buscar_receta" value="<?php echo e($busquedaReceta); ?>" class="input-ui pl-9 py-2 text-sm w-full md:w-64" placeholder="Medicamento, dosis o diagnóstico">
                     </div>
                     <button class="btn-main text-sm"><i class="fas fa-search"></i> Buscar</button>
                 </form>
@@ -733,7 +782,7 @@ select.input-ui, textarea.input-ui {
                             <div class="bg-white p-3 rounded-xl"><strong class="text-[#7c6fb0]">Medicamento:</strong><br><?php echo e($receta['medicamento'] ?: 'N/A'); ?></div>
                             <div class="bg-white p-3 rounded-xl"><strong class="text-[#7c6fb0]">Dosis:</strong><br><?php echo e($receta['dosis'] ?: 'N/A'); ?></div>
                             <div class="md:col-span-2 bg-white p-3 rounded-xl"><strong class="text-[#7c6fb0]">Indicaciones:</strong><br><?php echo e($receta['indicaciones'] ?: 'N/A'); ?></div>
-                            <div class="bg-white p-3 rounded-xl"><strong class="text-[#7c6fb0]">Diagnostico:</strong><br><?php echo e($receta['diagnostico'] ?: 'N/A'); ?></div>
+                            <div class="bg-white p-3 rounded-xl"><strong class="text-[#7c6fb0]">Diagnóstico:</strong><br><?php echo e($receta['diagnostico'] ?: 'N/A'); ?></div>
                             <div class="bg-white p-3 rounded-xl"><strong class="text-[#7c6fb0]">Tratamiento:</strong><br><?php echo e($receta['tratamiento'] ?: 'N/A'); ?></div>
                         </div>
                     </div>
@@ -746,7 +795,6 @@ select.input-ui, textarea.input-ui {
 
 </main>
 
-<!-- FOOTER -->
 <footer class="footer-ui p-5 text-center text-sm text-gray-800">
     <div class="team-container cursor-pointer font-semibold">
         <span><i class="fas fa-code-branch mr-1"></i> Error 404: Members not found</span>
@@ -758,7 +806,7 @@ select.input-ui, textarea.input-ui {
             <p>OTTO FERNANDO SANCHEZ CENTENO</p>
         </div>
     </div>
-    <p class="mt-2 text-xs opacity-70">Sistema clinico Dental Guru</p>
+    <p class="mt-2 text-xs opacity-70">Sistema clínico Dental Guru</p>
 </footer>
 
 <script>
@@ -790,7 +838,56 @@ if (searchInput) {
         });
     });
 }
+
+// Buscador de pacientes en tiempo real (filtro sobre el select)
+const buscador = document.getElementById('buscadorPaciente');
+const selectPaciente = document.getElementById('pacienteSelect');
+
+if (buscador && selectPaciente) {
+    const opcionesOriginales = Array.from(selectPaciente.options);
+    
+    buscador.addEventListener('input', function() {
+        const term = this.value.toLowerCase().trim();
+        selectPaciente.innerHTML = '';
+        
+        if (term === '') {
+            opcionesOriginales.forEach(opt => {
+                selectPaciente.appendChild(opt.cloneNode(true));
+            });
+            return;
+        }
+        
+        const opcionesFiltradas = opcionesOriginales.filter(opt => {
+            const textoOpt = (opt.textContent || '').toLowerCase();
+            return textoOpt.includes(term);
+        });
+        
+        if (opcionesFiltradas.length === 0) {
+            const optionNoResult = document.createElement('option');
+            optionNoResult.disabled = true;
+            optionNoResult.textContent = '❌ No se encontraron pacientes';
+            selectPaciente.appendChild(optionNoResult);
+        } else {
+            opcionesFiltradas.forEach(opt => {
+                selectPaciente.appendChild(opt.cloneNode(true));
+            });
+        }
+        
+        if (term === '' && <?php echo $nuevoPacienteId; ?> > 0) {
+            selectPaciente.value = <?php echo $nuevoPacienteId; ?>;
+        }
+    });
+    
+    <?php if ($nuevoPacienteId > 0): ?>
+        const pacienteSeleccionado = Array.from(selectPaciente.options).find(opt => opt.value == <?php echo $nuevoPacienteId; ?>);
+        if (pacienteSeleccionado) {
+            buscador.value = pacienteSeleccionado.textContent.trim();
+            buscador.dispatchEvent(new Event('input'));
+        }
+    <?php endif; ?>
+}
 </script>
 
 </body>
 </html>
+

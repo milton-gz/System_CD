@@ -82,7 +82,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     $update->execute();
 
                     // REDIRECCIÓN DIRECTA
-                    echo "<script>window.location='index.php'</script>";
+                    echo "<script>window.location='validacion.php'</script>";
                     exit;
                 } else {
                     $mensaje = "Error al registrar. Intente nuevamente.";
@@ -135,7 +135,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     $update->execute();
 
                     // Redirección según rol
-                    echo "<script>window.location='index.php'</script>";
+                    echo "<script>window.location='validacion.php'</script>";
                     exit;
                 } else {
                     $mensaje = "Contraseña incorrecta.";

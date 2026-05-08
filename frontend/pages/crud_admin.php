@@ -53,6 +53,25 @@ if ($tabla !== "") {
 }
 
 // =========================
+// OBTENER REGISTRO PARA EDITAR (AJAX)
+// =========================
+if (isset($_GET["get_row"]) && $tabla !== "" && $primaryKey) {
+    $id = $_GET["get_row"];
+    $stmt = $conn->prepare("SELECT * FROM `$tabla` WHERE `$primaryKey` = ? LIMIT 1");
+    $stmt->bind_param("s", $id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    if ($row = $result->fetch_assoc()) {
+        header('Content-Type: application/json');
+        echo json_encode($row);
+    } else {
+        http_response_code(404);
+        echo json_encode(["error" => "Registro no encontrado"]);
+    }
+    exit();
+}
+
+// =========================
 // INSERTAR REGISTRO
 // =========================
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["insert"]) && $tabla !== "") {
@@ -96,6 +115,56 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["insert"]) && $tabla !
 }
 
 // =========================
+// ACTUALIZAR REGISTRO (EDITAR)
+// =========================
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["update"]) && $tabla !== "" && $primaryKey) {
+    $id = $_POST[$primaryKey];
+    $setParts = [];
+    $values = [];
+    $types = "";
+
+    foreach ($columns as $col) {
+        $name = $col["Field"];
+        $isAutoIncrement = str_contains($col["Extra"], "auto_increment");
+        
+        // No actualizar la clave primaria ni auto_increment
+        if ($name === $primaryKey || $isAutoIncrement) {
+            continue;
+        }
+
+        if (!array_key_exists($name, $_POST)) {
+            continue;
+        }
+
+        $value = trim($_POST[$name]);
+        if ($value === "") {
+            $value = null;
+        }
+
+        $setParts[] = "`$name` = ?";
+        $values[] = $value;
+        $types .= "s";
+    }
+
+    if ($setParts) {
+        $sql = "UPDATE `$tabla` SET " . implode(", ", $setParts) . " WHERE `$primaryKey` = ?";
+        $values[] = $id;
+        $types .= "s";
+
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param($types, ...$values);
+
+        if ($stmt->execute()) {
+            $mensaje = "✅ Registro actualizado correctamente.";
+        } else {
+            $error = "❌ No se pudo actualizar: " . $stmt->error;
+        }
+    } else {
+        $error = "⚠️ No hay campos para actualizar.";
+    }
+}
+
+// =========================
 // ELIMINAR REGISTRO
 // =========================
 if (isset($_GET["delete"]) && $tabla !== "" && $primaryKey) {
@@ -125,7 +194,6 @@ $data = $tabla !== "" ? $conn->query("SELECT * FROM `$tabla` LIMIT 100") : false
 $totalRegistros = 0;
 if ($data && $data->num_rows > 0) {
     $totalRegistros = $data->num_rows;
-    // Resetear puntero
     $data->data_seek(0);
 }
 ?>
@@ -163,7 +231,6 @@ if ($data && $data->num_rows > 0) {
             flex-direction: column;
         }
 
-        /* HEADER FIJO */
         .header-fixed {
             position: sticky;
             top: 0;
@@ -172,7 +239,6 @@ if ($data && $data->num_rows > 0) {
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
         }
 
-        /* CARDS */
         .crud-card {
             background: white;
             border-radius: 24px;
@@ -186,7 +252,6 @@ if ($data && $data->num_rows > 0) {
             box-shadow: 0 8px 25px rgba(98, 95, 165, 0.1);
         }
 
-        /* INPUTS */
         .input-ui {
             width: 100%;
             padding: 12px 16px;
@@ -204,7 +269,6 @@ if ($data && $data->num_rows > 0) {
             background: white;
         }
 
-        /* SELECT */
         .select-ui {
             width: 100%;
             padding: 12px 16px;
@@ -222,7 +286,6 @@ if ($data && $data->num_rows > 0) {
             box-shadow: 0 0 0 3px rgba(98, 95, 165, 0.1);
         }
 
-        /* BOTONES */
         .btn-main {
             background: linear-gradient(135deg, var(--green) 0%, var(--green-dark) 100%);
             color: #1a1a1a;
@@ -241,10 +304,6 @@ if ($data && $data->num_rows > 0) {
         .btn-main:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(135, 244, 181, 0.4);
-        }
-
-        .btn-main:active {
-            transform: translateY(0);
         }
 
         .btn-outline {
@@ -268,7 +327,50 @@ if ($data && $data->num_rows > 0) {
             transform: translateY(-2px);
         }
 
-        /* TABLA */
+        .btn-edit {
+            background: #e0f2fe;
+            color: #0284c7;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-right: 8px;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-edit:hover {
+            background: #0284c7;
+            color: white;
+            transform: translateY(-1px);
+        }
+
+        .btn-delete {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .btn-delete:hover {
+            background: #dc2626;
+            color: white;
+            transform: translateY(-1px);
+        }
+
         .table-container {
             overflow-x: auto;
             border-radius: 16px;
@@ -301,28 +403,6 @@ if ($data && $data->num_rows > 0) {
             transition: background 0.2s ease;
         }
 
-        /* BOTÓN ELIMINAR */
-        .btn-delete {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 6px 12px;
-            border-radius: 8px;
-            font-size: 11px;
-            font-weight: 600;
-            text-decoration: none;
-            transition: all 0.2s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .btn-delete:hover {
-            background: #dc2626;
-            color: white;
-            transform: translateY(-1px);
-        }
-
-        /* ALERTAS */
         .alert-success {
             background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
             color: #065f46;
@@ -335,7 +415,6 @@ if ($data && $data->num_rows > 0) {
             border-left: 4px solid #ef4444;
         }
 
-        /* BADGES */
         .badge-info {
             background: var(--primary-light);
             color: white;
@@ -345,7 +424,6 @@ if ($data && $data->num_rows > 0) {
             font-weight: 600;
         }
 
-        /* FOOTER */
         .footer {
             background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
             color: white;
@@ -354,7 +432,6 @@ if ($data && $data->num_rows > 0) {
             margin-top: auto;
         }
 
-        /* ANIMACIONES */
         @keyframes fadeIn {
             from {
                 opacity: 0;
@@ -370,7 +447,6 @@ if ($data && $data->num_rows > 0) {
             animation: fadeIn 0.4s ease-out;
         }
 
-        /* SCROLLBAR */
         ::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -386,14 +462,34 @@ if ($data && $data->num_rows > 0) {
             border-radius: 10px;
         }
 
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--primary);
+        /* Modal personalizado */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-container {
+            background: white;
+            border-radius: 24px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 40px rgba(0,0,0,0.2);
         }
     </style>
 </head>
 <body>
 
-<!-- HEADER MEJORADO -->
+<!-- HEADER -->
 <header class="header-fixed">
     <div class="flex justify-between items-center px-4 md:px-8 py-3">
         <div class="flex items-center gap-3">
@@ -422,7 +518,6 @@ if ($data && $data->num_rows > 0) {
 <main class="flex-1 w-full px-4 md:px-8 py-6">
     <div class="max-w-7xl mx-auto">
         
-        <!-- TÍTULO -->
         <div class="mb-6 animate-fadeIn">
             <h1 class="text-2xl md:text-3xl font-bold text-gray-800 flex items-center gap-3">
                 <i class="fas fa-database text-[#625fa5]"></i>
@@ -431,7 +526,6 @@ if ($data && $data->num_rows > 0) {
             <p class="text-gray-500 text-sm mt-1">Gestión dinámica de todas las tablas de la base de datos</p>
         </div>
 
-        <!-- ALERTAS -->
         <?php if ($mensaje): ?>
         <div class="p-4 rounded-xl mb-4 alert-success flex items-center gap-3 animate-fadeIn">
             <i class="fas fa-check-circle text-lg"></i>
@@ -517,11 +611,9 @@ if ($data && $data->num_rows > 0) {
                         <i class="fas fa-database mr-1"></i><?= $totalRegistros ?> registros
                     </span>
                 </div>
-                <div class="flex gap-2">
-                    <div class="relative">
-                        <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
-                        <input type="text" id="searchTable" placeholder="Buscar..." class="pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm w-full md:w-56">
-                    </div>
+                <div class="relative">
+                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
+                    <input type="text" id="searchTable" placeholder="Buscar..." class="pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm w-full md:w-56">
                 </div>
             </div>
             
@@ -538,7 +630,7 @@ if ($data && $data->num_rows > 0) {
                     <tbody>
                         <?php if ($data && $data->num_rows > 0): ?>
                             <?php while ($row = $data->fetch_assoc()): ?>
-                            <tr>
+                            <tr data-id="<?php echo e($row[$primaryKey]); ?>">
                                 <?php foreach ($columns as $col): ?>
                                 <td title="<?php echo e($row[$col["Field"]] ?? ''); ?>">
                                     <?php 
@@ -549,11 +641,12 @@ if ($data && $data->num_rows > 0) {
                                 <?php endforeach; ?>
                                 <td>
                                     <?php if ($primaryKey): ?>
-                                    <a class="btn-delete" 
-                                       href="javascript:void(0)" 
-                                       onclick="confirmDelete('<?php echo urlencode($tabla); ?>', '<?php echo urlencode($row[$primaryKey]); ?>')">
+                                    <button class="btn-edit" onclick="openEditModal('<?php echo e($tabla); ?>', '<?php echo e($row[$primaryKey]); ?>')">
+                                        <i class="fas fa-edit"></i> Editar
+                                    </button>
+                                    <button class="btn-delete" onclick="confirmDelete('<?php echo e($tabla); ?>', '<?php echo e($row[$primaryKey]); ?>')">
                                         <i class="fas fa-trash-alt"></i> Eliminar
-                                    </a>
+                                    </button>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -577,11 +670,33 @@ if ($data && $data->num_rows > 0) {
             <?php endif; ?>
         </div>
         <?php endif; ?>
-
     </div>
 </main>
 
-<!-- FOOTER MEJORADO -->
+<!-- MODAL PARA EDITAR -->
+<div id="editModal" class="modal-overlay">
+    <div class="modal-container p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <i class="fas fa-pen-alt text-[#625fa5]"></i> Editar Registro
+            </h3>
+            <button onclick="closeEditModal()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+        </div>
+        <form id="editForm" method="POST">
+            <input type="hidden" name="update" value="1">
+            <input type="hidden" id="edit_primary_key" name="<?php echo e($primaryKey); ?>" value="">
+            <div id="editFields" class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                <!-- Los campos se llenarán dinámicamente con JS -->
+            </div>
+            <div class="flex justify-end gap-3">
+                <button type="button" onclick="closeEditModal()" class="btn-outline">Cancelar</button>
+                <button type="submit" class="btn-main"><i class="fas fa-save"></i> Guardar Cambios</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- FOOTER -->
 <footer class="footer">
     <div class="relative inline-block group">
         <span class="font-semibold cursor-pointer hover:opacity-90 transition">
@@ -601,8 +716,9 @@ if ($data && $data->num_rows > 0) {
     <p class="text-xs mt-3 opacity-80">Sistema clínico Dental Gurú © 2024 | CRUD Administrativo</p>
 </footer>
 
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-// BÚSQUEDA EN TABLA
+// Búsqueda en tabla
 document.getElementById('searchTable')?.addEventListener('input', function() {
     const searchTerm = this.value.toLowerCase();
     const table = document.getElementById('dataTable');
@@ -617,7 +733,7 @@ document.getElementById('searchTable')?.addEventListener('input', function() {
     }
 });
 
-// CONFIRMAR ELIMINACIÓN MEJORADA
+// Eliminar con confirmación
 function confirmDelete(tabla, id) {
     Swal.fire({
         title: '¿Eliminar registro?',
@@ -631,9 +747,8 @@ function confirmDelete(tabla, id) {
         background: 'white',
         customClass: {
             popup: 'rounded-2xl',
-            title: 'text-gray-800',
-            confirmButton: 'btn-delete !rounded-lg',
-            cancelButton: 'btn-outline !rounded-lg'
+            confirmButton: '!rounded-lg',
+            cancelButton: '!rounded-lg'
         }
     }).then((result) => {
         if (result.isConfirmed) {
@@ -642,12 +757,114 @@ function confirmDelete(tabla, id) {
     });
 }
 
-// MENSAJES DE ÉXITO CON SWEET ALERT
+// Abrir modal de edición y cargar datos vía AJAX
+function openEditModal(tabla, id) {
+    // Mostrar loader dentro del modal
+    const modal = document.getElementById('editModal');
+    const fieldsContainer = document.getElementById('editFields');
+    fieldsContainer.innerHTML = '<div class="col-span-2 text-center py-4"><i class="fas fa-spinner fa-pulse text-[#625fa5] text-2xl"></i><p class="mt-2">Cargando datos...</p></div>';
+    modal.style.display = 'flex';
+    
+    // Petición fetch para obtener los datos del registro
+    fetch(`?tabla=${encodeURIComponent(tabla)}&get_row=${encodeURIComponent(id)}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                fieldsContainer.innerHTML = `<div class="col-span-2 text-center py-4 text-red-500"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                return;
+            }
+            
+            // Generar campos del formulario basados en las columnas (excluyendo auto_increment)
+            // Obtenemos la estructura de columnas desde el servidor o la reconstruimos con un segundo fetch
+            // Para evitar hacer otro fetch, podemos enviar las columnas al cliente al cargar la página (vía data attribute)
+            // Lo más sencillo: obtener columnas de un endpoint. Pero como ya tenemos las columnas en el backend,
+            // vamos a hacer un segundo fetch para obtener la lista de columnas? Mejor pasar las columnas desde PHP a JS.
+            // Voy a inyectar las columnas en una variable JS al inicio.
+            buildEditForm(data);
+        })
+        .catch(error => {
+            fieldsContainer.innerHTML = `<div class="col-span-2 text-center py-4 text-red-500">Error al cargar los datos: ${error.message}</div>`;
+        });
+    
+    // Establecer el valor del campo primario oculto
+    document.getElementById('edit_primary_key').value = id;
+}
+
+// Construir campos del modal (llamado después de obtener datos)
+function buildEditForm(data) {
+    const fieldsContainer = document.getElementById('editFields');
+    // Las columnas se pasan desde PHP al final de la página (variable global)
+    if (typeof window.columnsData === 'undefined') {
+        // Fallback: generar campos a partir de las claves del objeto data
+        let html = '';
+        for (let key in data) {
+            // Omitir la clave primaria? La incluimos como solo lectura o readonly? Se oculta en el hidden.
+            if (key === '<?php echo $primaryKey; ?>') continue;
+            let value = data[key] !== null ? data[key] : '';
+            html += `
+                <div>
+                    <label class="text-xs font-medium text-gray-600 mb-1 block">${escapeHtml(key)}</label>
+                    <input type="text" name="${escapeHtml(key)}" value="${escapeHtml(value)}" class="input-ui">
+                </div>
+            `;
+        }
+        fieldsContainer.innerHTML = html;
+        return;
+    }
+    
+    // Usar columnas conocidas
+    let html = '';
+    for (let col of window.columnsData) {
+        const fieldName = col.Field;
+        const isAutoIncrement = col.Extra && col.Extra.includes('auto_increment');
+        if (isAutoIncrement || fieldName === '<?php echo $primaryKey; ?>') continue;
+        let value = data[fieldName] !== null ? data[fieldName] : '';
+        html += `
+            <div>
+                <label class="text-xs font-medium text-gray-600 mb-1 block">${escapeHtml(fieldName)}</label>
+                <input type="text" name="${escapeHtml(fieldName)}" value="${escapeHtml(value)}" class="input-ui">
+            </div>
+        `;
+    }
+    fieldsContainer.innerHTML = html;
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').style.display = 'none';
+}
+
+// Cerrar modal al hacer clic fuera del contenido
+document.getElementById('editModal').addEventListener('click', function(e) {
+    if (e.target === this) closeEditModal();
+});
+
+// Mensajes de éxito con SweetAlert
 <?php if ($mensaje && strpos($mensaje, 'guardado') !== false): ?>
 Swal.fire({
     icon: 'success',
-    title: '¡Registro guardado!',
-    text: 'El registro se ha guardado correctamente.',
+    title: 'Éxito',
+    text: '<?php echo addslashes($mensaje); ?>',
+    confirmButtonColor: '#625fa5',
+    timer: 2000,
+    showConfirmButton: false
+});
+<?php endif; ?>
+
+<?php if ($mensaje && strpos($mensaje, 'actualizado') !== false): ?>
+Swal.fire({
+    icon: 'success',
+    title: 'Actualizado',
+    text: '<?php echo addslashes($mensaje); ?>',
     confirmButtonColor: '#625fa5',
     timer: 2000,
     showConfirmButton: false
@@ -657,8 +874,8 @@ Swal.fire({
 <?php if ($mensaje && strpos($mensaje, 'eliminado') !== false): ?>
 Swal.fire({
     icon: 'success',
-    title: '¡Registro eliminado!',
-    text: 'El registro se ha eliminado correctamente.',
+    title: 'Eliminado',
+    text: '<?php echo addslashes($mensaje); ?>',
     confirmButtonColor: '#625fa5',
     timer: 2000,
     showConfirmButton: false
@@ -666,8 +883,10 @@ Swal.fire({
 <?php endif; ?>
 </script>
 
-<!-- SweetAlert2 para mejores alertas -->
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+// Pasar las columnas desde PHP a JavaScript para el modal de edición
+window.columnsData = <?php echo json_encode($columns); ?>;
+</script>
 
 </body>
 </html>

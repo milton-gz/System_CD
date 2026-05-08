@@ -7,11 +7,11 @@ if (!isset($_SESSION['id'])) {
     exit();
 }
 
-if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'paciente') {
+if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'Paciente') {
     switch ($_SESSION['rol'] ?? '') {
-        case "admin": header("Location: admin.php"); break;
-        case "doctor": header("Location: doctor.php"); break;
-        case "recepcion": header("Location: recepcion.php"); break;
+        case "Admin": header("Location: admin.php"); break;
+        case "Doctor": header("Location: doctor.php"); break;
+        case "Recepcion": header("Location: recepcion.php"); break;
         default: session_destroy(); header("Location: ../login.php"); break;
     }
     exit();

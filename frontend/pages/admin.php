@@ -18,15 +18,15 @@ if (!isset($_SESSION['id'])) {
 // =========================
 // 2. VALIDAR ROL (SOLO ADMIN)
 // =========================
-if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'admin') {
+if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'Admin') {
     switch ($_SESSION['rol']) {
-        case "doctor":
+        case "Doctor":
             header("Location: doctor.php");
             break;
-        case "paciente":
+        case "Paciente":
             header("Location: paciente.php");
             break;
-        case "recepcion":
+        case "Recepcion":
             header("Location: recepcion.php");
             break;
         default:

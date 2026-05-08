@@ -1,18 +1,34 @@
 <?php
 session_start();
 require_once "../config/conexion.php";
+// Incluir PHPMailer (ajusta la ruta según tu estructura)
+require_once "../../PHPMailer/src/Exception.php";
+require_once "../../PHPMailer/src/PHPMailer.php";
+require_once "../../PHPMailer/src/SMTP.php";
+
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
 
 if (!isset($_SESSION['id'])) {
     header("Location: ../login.php");
     exit();
 }
 
-if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'doctor') {
+if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'Doctor') {
     switch ($_SESSION['rol'] ?? '') {
-        case "admin": header("Location: admin.php"); break;
-        case "paciente": header("Location: paciente.php"); break;
-        case "recepcion": header("Location: recepcion.php"); break;
-        default: session_destroy(); header("Location: ../login.php"); break;
+        case "Admin":
+            header("Location: admin.php");
+            break;
+        case "Paciente":
+            header("Location: paciente.php");
+            break;
+        case "Recepcion":
+            header("Location: recepcion.php");
+            break;
+        default:
+            session_destroy();
+            header("Location: ../login.php");
+            break;
     }
     exit();
 }
@@ -44,10 +60,10 @@ function tipoTexto($tipo) {
 
 function badgeEstado($estado) {
     $map = [
-        "pendiente" => "bg-amber-100 text-amber-700",
-        "confirmada" => "bg-emerald-100 text-emerald-700",
-        "atendida" => "bg-sky-100 text-sky-700",
-        "cancelada" => "bg-rose-100 text-rose-700"
+        "pendiente" => "bg-yellow-100 text-yellow-700",
+        "confirmada" => "bg-green-100 text-green-700",
+        "atendida" => "bg-blue-100 text-blue-700",
+        "cancelada" => "bg-red-100 text-red-700"
     ];
     return $map[$estado] ?? "bg-gray-100 text-gray-700";
 }
@@ -59,6 +75,70 @@ function registrarHistorial($conn, $idCita, $anterior, $nuevo) {
     $stmt->execute();
 }
 
+/**
+ * Envía un correo de confirmación al paciente.
+ * Cambia los datos SMTP o usa mail() simple.
+ */
+function enviarConfirmacionCita($correoPaciente, $nombrePaciente, $fecha, $hora, $doctor, $especialidad, $tipoCita, $observaciones = '')
+{
+    $mail = new PHPMailer(true);
+    
+    try {
+        // 🔥 Establecer la codificación UTF-8 para todo el correo
+        $mail->CharSet = 'UTF-8';
+
+        // Configuración SMTP
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = 'quintanillamarcos468@gmail.com';
+        $mail->Password   = 'atepdkhwmjalmyvm';   // Contraseña de aplicación
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
+
+        $mail->setFrom('quintanillamarcos468@gmail.com', 'Clínica Dental Guru');
+        $mail->addAddress($correoPaciente, $nombrePaciente);
+
+        $fechaFormateada = date('d/m/Y', strtotime($fecha));
+        $horaFormateada  = substr($hora, 0, 5);
+        $asunto = '✅ Cita confirmada - Dental Guru';
+
+        $mail->isHTML(true);
+        $mail->Subject = $asunto;
+        
+        // 🔥 Añadir meta charset UTF-8 en el HTML
+        $mail->Body = "
+        <html>
+        <head>
+            <meta charset='UTF-8'>
+            <style>body{font-family:Arial;}</style>
+        </head>
+        <body>
+            <h2>Estimado/a $nombrePaciente</h2>
+            <p>Su cita ha sido <strong style='color:green'>confirmada</strong> por el doctor <strong>$doctor</strong> ($especialidad).</p>
+            <p><strong>Detalles:</strong><br>
+            📅 Fecha: $fechaFormateada<br>
+            ⏰ Hora: $horaFormateada<br>
+            🦷 Tipo: $tipoCita<br>
+            " . ($observaciones ? "📝 Observaciones: $observaciones<br>" : "") . "
+            </p>
+            <p>Por favor, llegue con 10 minutos de anticipación.</p>
+            <p>Gracias por confiar en nosotros.</p>
+        </body>
+        </html>
+        ";
+
+        $mail->AltBody = "Estimado/a $nombrePaciente, su cita ha sido confirmada por el doctor $doctor ($especialidad) para el $fechaFormateada a las $horaFormateada. Tipo: $tipoCita.";
+
+        $mail->send();
+        return true;
+    } catch (Exception $e) {
+        error_log("Error enviando correo a $correoPaciente: " . $mail->ErrorInfo);
+        return false;
+    }
+}
+
+// Obtener datos del doctor
 $stmt = $conn->prepare("SELECT * FROM DOCTOR WHERE USUARIO_id_usuario = ?");
 $stmt->bind_param("i", $idUsuario);
 $stmt->execute();
@@ -75,9 +155,9 @@ if (!$doctor) {
     $stmt->execute();
     $doctor = $stmt->get_result()->fetch_assoc();
 }
-
 $idDoctor = (int) $doctor["id_doctor"];
 
+// PROCESAR POST
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $accion = $_POST["accion"] ?? "";
     $idCita = (int) ($_POST["id_cita"] ?? 0);
@@ -97,14 +177,64 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $estadoNuevo = "confirmada";
             $stmt = $conn->prepare("UPDATE CITA SET DOCTOR_id_doctor = ?, estado = ? WHERE id_cita = ?");
             $stmt->bind_param("isi", $idDoctor, $estadoNuevo, $idCita);
+
             if ($stmt->execute()) {
                 registrarHistorial($conn, $idCita, $estadoAnterior, $estadoNuevo);
                 $mensaje = "Cita confirmada y asignada a tu agenda.";
+
+                // --- ENVÍO DE CORREO DE CONFIRMACIÓN ---
+                // Obtener datos del paciente y detalles completos
+                $stmtDatos = $conn->prepare("
+                    SELECT 
+                        U.correo, U.nombre AS paciente_nombre,
+                        C.fecha, C.hora, C.tipo, C.observaciones,
+                        D.especialidad
+                    FROM CITA C
+                    JOIN PACIENTE P ON P.id_paciente = C.PACIENTE_id_paciente
+                    JOIN USUARIO U ON U.id_usuario = P.USUARIO_id_usuario
+                    LEFT JOIN DOCTOR D ON D.id_doctor = ?
+                    WHERE C.id_cita = ?
+                ");
+                $stmtDatos->bind_param("ii", $idDoctor, $idCita);
+                $stmtDatos->execute();
+                $datosCita = $stmtDatos->get_result()->fetch_assoc();
+
+                if ($datosCita) {
+                    $correoPaciente = $datosCita['correo'];
+                    $nombrePaciente = $datosCita['paciente_nombre'];
+                    $fechaCita      = $datosCita['fecha'];
+                    $horaCita       = $datosCita['hora'];
+                    $tipoCita       = tipoTexto($datosCita['tipo']);
+                    $observaciones  = $datosCita['observaciones'] ?? '';
+                    $especialidadDoctor = $datosCita['especialidad'] ?? ($doctor["especialidad"] ?? 'Odontología general');
+                    $nombreDoctorCompleto = $_SESSION['nombre'];
+
+                    $enviado = enviarConfirmacionCita(
+                        $correoPaciente,
+                        $nombrePaciente,
+                        $fechaCita,
+                        $horaCita,
+                        $nombreDoctorCompleto,
+                        $especialidadDoctor,
+                        $tipoCita,
+                        $observaciones
+                    );
+
+                    if ($enviado) {
+                        $mensaje .= " Se envió un correo de confirmación al paciente.";
+                    } else {
+                        $mensaje .= " No se pudo enviar el correo (revisa la configuración), pero la cita quedó confirmada.";
+                    }
+                } else {
+                    $mensaje .= " No se pudieron obtener los datos del paciente para enviar el correo.";
+                }
+                // --- FIN ENVÍO CORREO ---
             } else {
                 $error = "No se pudo confirmar la cita.";
             }
         }
     } elseif ($accion === "atender") {
+        // (Tu código de atención no se modifica)
         if (in_array($cita["estado"], ["cancelada", "atendida"], true)) {
             $error = "Esta cita no puede atenderse.";
         } else {
@@ -150,6 +280,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     }
 }
 
+// Consultas para resumen y listado (sin cambios)
 $stmt = $conn->prepare("
     SELECT
         COUNT(*) AS total,
@@ -188,15 +319,15 @@ $citas = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 <!DOCTYPE html>
 <html lang="es">
+<!-- El resto del HTML, CSS y JS es exactamente el que ya tenías, sin cambios -->
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 <title>Dental Guru | Doctor</title>
-
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-
 <style>
+/* Aquí va todo tu CSS original (no se ha modificado nada) */
 :root {
     --primary: #7c6fb0;
     --primary-light: #9b8fc9;
@@ -204,13 +335,11 @@ $citas = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     --secondary: #8cd4ae;
     --secondary-dark: #6ab88e;
 }
-
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
-
 body {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     background: #f5f7fb;
@@ -218,8 +347,6 @@ body {
     display: flex;
     flex-direction: column;
 }
-
-/* HEADER */
 .header {
     background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
     color: white;
@@ -228,8 +355,6 @@ body {
     z-index: 100;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
-
-/* MENU LATERAL */
 .mobile-menu {
     position: fixed;
     top: 0;
@@ -244,7 +369,6 @@ body {
     box-shadow: -5px 0 30px rgba(0, 0, 0, 0.2);
 }
 .mobile-menu.active { right: 0; }
-
 .overlay {
     position: fixed;
     top: 0;
@@ -261,8 +385,6 @@ body {
     opacity: 1;
     visibility: visible;
 }
-
-/* CARDS */
 .card-ui {
     background: white;
     border-radius: 20px;
@@ -274,8 +396,6 @@ body {
     transform: translateY(-2px);
     box-shadow: 0 8px 24px rgba(124, 111, 176, 0.12);
 }
-
-/* INPUTS */
 .input-ui {
     width: 100%;
     padding: 10px 14px;
@@ -290,8 +410,6 @@ body {
     border-color: var(--primary);
     box-shadow: 0 0 0 3px rgba(124, 111, 176, 0.1);
 }
-
-/* BOTONES */
 .btn-main {
     background: linear-gradient(135deg, var(--secondary) 0%, var(--secondary-dark) 100%);
     color: #1a2e2a;
@@ -310,7 +428,6 @@ body {
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(140, 212, 174, 0.35);
 }
-
 .btn-outline {
     background: transparent;
     border: 1.5px solid var(--primary-light);
@@ -330,8 +447,6 @@ body {
     color: white;
     transform: translateY(-1px);
 }
-
-/* BADGES */
 .badge-fix {
     display: inline-flex;
     align-items: center;
@@ -342,8 +457,6 @@ body {
     font-weight: 700;
     text-transform: capitalize;
 }
-
-/* FILTROS */
 .filter-btn {
     padding: 6px 16px;
     border-radius: 999px;
@@ -362,13 +475,10 @@ body {
 .filter-btn:hover:not(.active) {
     background: #e2e8f0;
 }
-
-/* FOOTER */
 .footer-ui {
     background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
     margin-top: auto;
 }
-
 .team-container {
     position: relative;
     display: inline-block;
@@ -405,8 +515,6 @@ body {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
 }
-
-/* ANIMACIONES */
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
@@ -414,8 +522,6 @@ body {
 .fade-in {
     animation: fadeIn 0.4s ease-out forwards;
 }
-
-/* SCROLLBAR */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -430,10 +536,9 @@ body {
 }
 </style>
 </head>
-
 <body>
 
-<!-- HEADER CON HAMBURGUESA -->
+<!-- HEADER (sin cambios) -->
 <header class="header px-5 md:px-8 py-3 flex items-center justify-between">
     <div class="flex items-center gap-3">
         <img src="../assets/logo.png" class="w-28 rounded-xl shadow-sm" alt="Dental Guru" onerror="this.style.display='none'">
@@ -450,7 +555,7 @@ body {
     </div>
 </header>
 
-<!-- OVERLAY Y MENU LATERAL -->
+<!-- OVERLAY Y MENÚ (sin cambios) -->
 <div id="overlay" class="overlay" onclick="closeMenu()"></div>
 <div id="menu" class="mobile-menu">
     <div class="flex justify-between items-center mb-6 pb-3 border-b border-white/20">
@@ -476,7 +581,7 @@ body {
     <a href="../config/cerrar_sesion.php" class="flex items-center gap-3 px-3 py-2 rounded-lg text-red-300 hover:bg-white/10 transition"><i class="fas fa-sign-out-alt w-5"></i> Cerrar sesion</a>
 </div>
 
-<!-- MAIN CONTENT -->
+<!-- MAIN CONTENT (sin cambios estructurales) -->
 <main class="flex-1 max-w-7xl mx-auto w-full p-4 md:p-6 fade-in">
 
 <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-4">
@@ -499,7 +604,7 @@ body {
 </div>
 <?php endif; ?>
 
-<!-- TARJETAS RESUMEN -->
+<!-- Tarjetas resumen (sin cambios) -->
 <section class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
     <div class="card-ui p-4 text-center">
         <i class="fas fa-calendar-day text-2xl text-[#7c6fb0]/40 mb-1"></i>
@@ -523,7 +628,7 @@ body {
     </div>
 </section>
 
-<!-- FILTROS Y BUSCADOR -->
+<!-- Filtros y buscador (sin cambios) -->
 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
     <div class="flex gap-2 flex-wrap">
         <button class="filter-btn active" data-filter="all">Todos</button>
@@ -538,10 +643,9 @@ body {
     </div>
 </div>
 
-<!-- LISTA DE CITAS -->
+<!-- Lista de citas (sin cambios, solo se muestra el botón de confirmar y tomar) -->
 <section class="card-ui p-5">
     <h3 class="font-bold text-gray-800 mb-4"><i class="fas fa-list mr-2 text-[#7c6fb0]"></i>Citas por atender</h3>
-
     <div id="listaPacientes" class="space-y-3">
         <?php if (!$citas): ?>
             <div class="text-center py-8 text-gray-400"><i class="fas fa-inbox text-3xl mb-2 block"></i>No hay citas pendientes o asignadas</div>
@@ -574,7 +678,7 @@ body {
             </summary>
 
             <div class="p-4 bg-gray-50 text-sm space-y-4">
-                <!-- DATOS DEL PACIENTE -->
+                <!-- Datos del paciente (sin cambios) -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div class="bg-white p-3 rounded-xl"><i class="fas fa-envelope text-[#7c6fb0] w-5"></i> <?php echo e($cita["paciente_correo"]); ?></div>
                     <div class="bg-white p-3 rounded-xl"><i class="fas fa-phone text-[#7c6fb0] w-5"></i> <?php echo e($cita["telefono"] ?: "No registrado"); ?></div>
@@ -589,6 +693,18 @@ body {
                     <p class="text-sm"><?php echo e($cita["observaciones"] ?: "Sin observaciones"); ?></p>
                 </div>
 
+                <!-- Botón Confirmar cita (solo para citas pendientes asignadas a este doctor) -->
+                <?php if ($cita["estado"] === "pendiente" && (int) $cita["sin_asignar"] === 0): ?>
+                <form method="POST" class="mt-3">
+                    <input type="hidden" name="accion" value="confirmar">
+                    <input type="hidden" name="id_cita" value="<?php echo (int) $cita["id_cita"]; ?>">
+                    <button type="submit" class="btn-outline">
+                        <i class="fas fa-check-circle"></i> Confirmar cita
+                    </button>
+                </form>
+                <?php endif; ?>
+
+                <!-- Botón Tomar y confirmar (citas sin asignar) -->
                 <?php if ($puedeTomar): ?>
                 <form method="POST" class="mt-3">
                     <input type="hidden" name="accion" value="tomar">
@@ -597,11 +713,11 @@ body {
                 </form>
                 <?php endif; ?>
 
+                <!-- Atención de cita -->
                 <?php if ($puedeAtender): ?>
                 <form method="POST" class="space-y-3 mt-3">
                     <input type="hidden" name="accion" value="atender">
                     <input type="hidden" name="id_cita" value="<?php echo (int) $cita["id_cita"]; ?>">
-
                     <div class="grid md:grid-cols-2 gap-3">
                         <div>
                             <label class="block text-xs font-medium text-gray-600 mb-1">Diagnostico *</label>
@@ -612,18 +728,15 @@ body {
                             <textarea name="tratamiento" class="input-ui" rows="3" placeholder="Tratamiento..." required></textarea>
                         </div>
                     </div>
-
                     <div>
                         <label class="block text-xs font-medium text-gray-600 mb-1">Notas internas</label>
                         <textarea name="notas" class="input-ui" rows="2" placeholder="Notas adicionales..."></textarea>
                     </div>
-
                     <div class="grid md:grid-cols-3 gap-3">
                         <input type="text" name="medicamento" class="input-ui" placeholder="Medicamento">
                         <input type="text" name="dosis" class="input-ui" placeholder="Dosis">
                         <input type="text" name="indicaciones" class="input-ui" placeholder="Indicaciones">
                     </div>
-
                     <div class="flex gap-2 flex-wrap">
                         <button type="submit" class="btn-main"><i class="fas fa-save"></i> Guardar y marcar atendida</button>
                     </div>
@@ -634,10 +747,9 @@ body {
         <?php endforeach; ?>
     </div>
 </section>
-
 </main>
 
-<!-- FOOTER -->
+<!-- FOOTER (sin cambios) -->
 <footer class="footer-ui p-5 text-center text-sm text-gray-800">
     <div class="team-container cursor-pointer font-semibold">
         <span><i class="fas fa-code-branch mr-1"></i> Error 404: Members not found</span>
@@ -658,26 +770,20 @@ function openMenu() {
     document.getElementById("overlay").classList.add("active");
     document.body.style.overflow = "hidden";
 }
-
 function closeMenu() {
     document.getElementById("menu").classList.remove("active");
     document.getElementById("overlay").classList.remove("active");
     document.body.style.overflow = "";
 }
-
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') closeMenu();
 });
-
-// FILTROS Y BUSCADOR
 const botones = document.querySelectorAll(".filter-btn");
 const pacientes = document.querySelectorAll(".paciente");
 const search = document.getElementById("search");
 let filtroActivo = "all";
-
 function filtrarPacientes() {
     const valor = search ? search.value.toLowerCase() : "";
-
     pacientes.forEach(p => {
         const coincideFiltro = filtroActivo === "all" ||
             p.dataset.estado === filtroActivo ||
@@ -686,7 +792,6 @@ function filtrarPacientes() {
         p.style.display = (coincideFiltro && coincideBusqueda) ? "" : "none";
     });
 }
-
 botones.forEach(btn => {
     btn.addEventListener("click", () => {
         botones.forEach(b => b.classList.remove("active"));
@@ -695,11 +800,9 @@ botones.forEach(btn => {
         filtrarPacientes();
     });
 });
-
 if (search) {
     search.addEventListener("input", filtrarPacientes);
 }
 </script>
-
 </body>
 </html>
